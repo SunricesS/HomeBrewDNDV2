@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@400;600;700;800;900&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=MedievalSharp&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* D&D 5e / Baldur's Gate 3 Dark Fantasy & Parchment Tokens */
+  --bg-deepest: #0d0907;
+  --bg-primary: #140f0c;
+  --bg-secondary: #1b140e;
+  --bg-panel: #221912;
+  --bg-card: #2a1f16;
+  --bg-elevated: #35271c;
+  --bg-parchment-dark: #2d2117;
+  --bg-parchment-light: #f4ecd8;
+
+  /* Antique Gold & Bronze */
+  --accent: #c5a059;
+  --accent-hover: #e5c158;
+  --accent-dim: #8c6f34;
+  --accent-glow: rgba(197, 160, 89, 0.40);
+  --accent-subtle: rgba(197, 160, 89, 0.08);
+
+  /* Semantic RPG Colors */
+  --danger: #8b1e1e;
+  --danger-dim: #5c1313;
+  --danger-glow: rgba(139, 30, 30, 0.45);
+  --danger-hover: #aa2828;
+
+  --success: #2e7d32;
+  --success-dim: #1b5e20;
+  --success-glow: rgba(46, 125, 50, 0.35);
+
+  --warning: #d97706;
+  --warning-dim: #92400e;
+
+  --purple: #6b21a8;
+  --purple-dim: #4c1d95;
+  --gold: #d4af37;
+
+  /* Typography */
+  --text-primary: #f3eee3;
+  --text-secondary: #c5b69e;
+  --text-muted: #8a7b68;
+  --text-gold: #e5c158;
+  --text-on-accent: #ffffff;
+
+  /* Borders & Glassmorphism */
+  --border-subtle: rgba(197, 160, 89, 0.14);
+  --border-default: rgba(197, 160, 89, 0.25);
+  --border-accent: rgba(197, 160, 89, 0.45);
+  --border-gold: #c5a059;
+  --glass-bg: rgba(22, 16, 12, 0.92);
+  --glass-bg-light: rgba(34, 25, 18, 0.88);
+  --glass-border: rgba(197, 160, 89, 0.30);
+  --glass-blur: 16px;
+
+  /* Font Families */
+  --font-family: 'EB Garamond', 'Alegreya Sans', serif;
+  --font-title: 'Cinzel', serif;
+  --font-decorative: 'Cinzel Decorative', 'Cinzel', serif;
+  --font-body: 'EB Garamond', serif;
+  --font-sans: 'Alegreya Sans', sans-serif;
+  --font-mono: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+body {
+  background-color: var(--bg-deepest);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d0907;
+}
+::-webkit-scrollbar-thumb {
+  background: #35271c;
+  border-radius: 4px;
+  border: 1px solid rgba(197, 160, 89, 0.2);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c5a059;
+}
+
+/* Glow & Glass Utilities */
+.dnd-glass {
+  background: rgba(26, 19, 14, 0.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(197, 160, 89, 0.25);
+}
+
+.dnd-glass-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dnd-glass-hover:hover {
+  border-color: rgba(197, 160, 89, 0.5);
+  box-shadow: 0 0 15px rgba(197, 160, 89, 0.25);
+  transform: translateY(-2px);
+}
+
+.gold-filigree-border {
+  border: 1px solid rgba(197, 160, 89, 0.3);
+  box-shadow: inset 0 0 12px rgba(197, 160, 89, 0.08), 0 4px 20px rgba(0, 0, 0, 0.6);
+}
