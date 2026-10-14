@@ -3266,6 +3266,40 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('restoreDefaultAttackPresets', async () => {
+    if (!players[socket.id] || players[socket.id].role !== 'dm') return;
+    attackPresets = [...DEFAULT_ATTACK_PRESETS];
+    io.emit('attackPresetsUpdated', attackPresets);
+
+    try {
+      for (const p of DEFAULT_ATTACK_PRESETS) {
+        const dbRecord = {
+          id: p.id,
+          name: p.name,
+          stat: p.stat,
+          attack_type: p.attackType,
+          spell_level: p.baseSpellLevel || p.spellLevel || 1,
+          dice_pools: {
+            ...p.dicePools,
+            _meta: { physicalDamageType: p.physicalDamageType },
+            _aoe: { isAoe: p.isAoe, radius: p.aoeRadius },
+            _spellSlotConfig: { consumesSpellSlot: p.consumesSpellSlot, baseSpellLevel: p.baseSpellLevel, slotScaling: p.slotScaling },
+            _healConfig: { actionNature: p.actionNature, healPool: p.healPool, healTarget: p.healTarget, lifestealPercent: p.lifestealPercent }
+          },
+          status_effects_to_apply: p.statusEffectsToApply,
+          half_damage_on_miss: p.halfDamageOnMiss,
+          extra_damage: p.extraDamage,
+          attack_count: p.attackCount,
+          description: p.description
+        };
+        await supabase.from('attack_presets').upsert(dbRecord);
+      }
+      console.log('Varsayılan attack presetleri başarıyla veritabanına kaydedildi.');
+    } catch (err) {
+      console.error('Varsayılan attack presetleri geri yüklenirken hata:', err.message);
+    }
+  });
+
   // ---- TOKEN PRESETS (HAZIR ŞEMALAR) SOCKET EVENTLERİ ----
   socket.on('getTokenPresets', () => {
     socket.emit('tokenPresetsUpdated', tokenPresets);
@@ -3709,12 +3743,12 @@ async function restoreAttackPresets() {
       } else if (error.code === 'PGRST205') {
         console.log('attack_presets tablosu henüz veritabanında oluşturulmamış.');
       }
-      attackPresets = [...DEFAULT_ATTACK_PRESETS];
+      attackPresets = [];
       return;
     }
 
-    if (data && data.length > 0) {
-      const dbPresets = data.map(row => {
+    if (data) {
+      attackPresets = data.map(row => {
         const slotConfig = row.dice_pools?._spellSlotConfig || {};
         const healCfg = row.heal_config || row.dice_pools?._healConfig || {};
         return {
@@ -3741,23 +3775,12 @@ async function restoreAttackPresets() {
           description: row.description || ''
         };
       });
-
-      // Eksik varsayılanları da ekle
-      DEFAULT_ATTACK_PRESETS.forEach(def => {
-        if (!dbPresets.some(p => p.id === def.id || p.name === def.name)) {
-          dbPresets.push(def);
-        }
-      });
-
-      attackPresets = dbPresets;
       console.log(`Supabase'den ${attackPresets.length} adet saldırı preseti başarıyla yüklendi.`);
     } else {
-      attackPresets = [...DEFAULT_ATTACK_PRESETS];
-      console.log(`Varsayılan ${attackPresets.length} adet hazır saldırı & şifa preseti başlatıldı.`);
+      attackPresets = [];
     }
   } catch (err) {
     console.error('Attack presets geri yüklenirken beklenmeyen hata:', err.message);
-    if (attackPresets.length === 0) attackPresets = [...DEFAULT_ATTACK_PRESETS];
   }
 }
 
@@ -3775,34 +3798,24 @@ async function restoreStatusPresets() {
       } else if (error.code === 'PGRST205') {
         console.log('status_presets tablosu henüz veritabanında oluşturulmamış.');
       }
-      customStatusPresets = [...DEFAULT_STATUS_PRESETS];
+      customStatusPresets = [];
       return;
     }
 
-    if (data && data.length > 0) {
-      const dbPresets = data.map(row => ({
+    if (data) {
+      customStatusPresets = data.map(row => ({
         id: row.id,
         name: row.name,
         icon: row.icon || '✨',
         duration: row.duration != null ? row.duration : null,
         effects: row.effects || {}
       }));
-
-      DEFAULT_STATUS_PRESETS.forEach(def => {
-        if (!dbPresets.some(p => p.id === def.id || p.name === def.name)) {
-          dbPresets.push(def);
-        }
-      });
-
-      customStatusPresets = dbPresets;
       console.log(`Supabase'den ${customStatusPresets.length} adet durum efekti preseti başarıyla yüklendi.`);
     } else {
-      customStatusPresets = [...DEFAULT_STATUS_PRESETS];
-      console.log(`Varsayılan ${customStatusPresets.length} adet durum efekti başlatıldı.`);
+      customStatusPresets = [];
     }
   } catch (err) {
     console.error('Status presets geri yüklenirken beklenmeyen hata:', err.message);
-    if (customStatusPresets.length === 0) customStatusPresets = [...DEFAULT_STATUS_PRESETS];
   }
 }
 
@@ -3821,12 +3834,12 @@ async function restoreTokenPresets() {
       } else if (error.code === 'PGRST205') {
         console.log('token_presets tablosu henüz veritabanında oluşturulmamış.');
       }
-      tokenPresets = [...DEFAULT_TOKEN_PRESETS];
+      tokenPresets = [];
       return;
     }
 
-    if (data && data.length > 0) {
-      const dbPresets = data.map(row => ({
+    if (data) {
+      tokenPresets = data.map(row => ({
         id: row.id,
         name: row.name,
         imgUrl: row.img_url || '',
@@ -3852,22 +3865,12 @@ async function restoreTokenPresets() {
         objectConfig: row.object_config || null,
         createdAt: row.created_at
       }));
-
-      DEFAULT_TOKEN_PRESETS.forEach(def => {
-        if (!dbPresets.some(p => p.id === def.id || p.name === def.name)) {
-          dbPresets.push(def);
-        }
-      });
-
-      tokenPresets = dbPresets;
       console.log(`Supabase'den ${tokenPresets.length} adet token şeması (preset) başarıyla yüklendi.`);
     } else {
-      tokenPresets = [...DEFAULT_TOKEN_PRESETS];
-      console.log(`Varsayılan ${tokenPresets.length} adet token şeması (Yuva / Yaratık) başlatıldı.`);
+      tokenPresets = [];
     }
   } catch (err) {
     console.error('Token presets geri yüklenirken beklenmeyen hata:', err.message);
-    if (tokenPresets.length === 0) tokenPresets = [...DEFAULT_TOKEN_PRESETS];
   }
 }
 

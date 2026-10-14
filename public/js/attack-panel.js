@@ -2497,12 +2497,25 @@
     if (filtered.length === 0) {
       grid.innerHTML = `
         <div style="grid-column: 1 / -1; text-align: center; padding: 28px 10px; color: #888;">
-          <p style="margin: 0 0 10px 0; font-size: 13px;">${term ? `"${escapeHtml(term)}" ile eşleşen saldırı preseti bulunamadı.` : 'Henüz kayıtlı saldırı preseti yok.'}</p>
-          <button type="button" class="btn primary action-btn" id="btn-empty-create-preset">+ Yeni Preset Yarat</button>
+          <p style="margin: 0 0 12px 0; font-size: 13px;">${term ? `"${escapeHtml(term)}" ile eşleşen saldırı preseti bulunamadı.` : 'Henüz kayıtlı saldırı preseti yok.'}</p>
+          <div style="display:flex; justify-content:center; gap:8px; flex-wrap:wrap;">
+            <button type="button" class="btn primary action-btn" id="btn-empty-create-preset">+ Yeni Preset Yarat</button>
+            ${!term ? '<button type="button" class="btn secondary" id="btn-empty-load-defaults">📦 Örnek Presetleri Yükle</button>' : ''}
+          </div>
         </div>
       `;
       const emptyBtn = grid.querySelector('#btn-empty-create-preset');
       if (emptyBtn) emptyBtn.addEventListener('click', openNewPresetBuilder);
+      const defaultsBtn = grid.querySelector('#btn-empty-load-defaults');
+      if (defaultsBtn) {
+        defaultsBtn.addEventListener('click', () => {
+          if (confirm('Varsayılan örnek saldırı ve şifa presetlerini yüklemek istiyor musunuz?')) {
+            if (typeof socket !== 'undefined') {
+              socket.emit('restoreDefaultAttackPresets');
+            }
+          }
+        });
+      }
       return;
     }
 
