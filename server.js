@@ -1149,6 +1149,18 @@ const sessionCache = {};
 let mapBgUrl = '';
 let drawHistory = [];
 
+// === HARİTA IZGARASI (GRID SYSTEM) ===
+let mapGridSettings = {
+  enabled: true,
+  size: 50,
+  thickness: 1,
+  color: '#ffffff',
+  opacity: 0.35,
+  style: 'solid',
+  snapToGrid: false,
+  showCoordinates: false
+};
+
 // === STATUS EFFECTS & CUSTOM EFFECT BUILDER MOTORU ===
 let customStatusPresets = [];
 
@@ -2255,6 +2267,9 @@ io.on('connection', (socket) => {
       socket.emit('updateBg', mapBgUrl);
     }
 
+    // Izgara ayarlarını gönder
+    socket.emit('mapGridUpdated', mapGridSettings);
+
     // Mevcut Savaş / İnisiyatif durumunu gönder
     socket.emit('combatStateUpdated', combatState);
   });
@@ -2660,6 +2675,26 @@ io.on('connection', (socket) => {
     if (url && !isValidUrl(url)) return;
     mapBgUrl = url || '';
     io.emit('updateBg', mapBgUrl);
+  });
+
+  // ---- DM: Harita Izgara (Grid) Ayarları Güncelle ----
+  socket.on('updateMapGrid', (settings) => {
+    if (!players[socket.id] || players[socket.id].role !== 'dm') return;
+    if (!settings || typeof settings !== 'object') return;
+
+    mapGridSettings = {
+      ...mapGridSettings,
+      enabled: settings.enabled !== undefined ? !!settings.enabled : mapGridSettings.enabled,
+      size: settings.size !== undefined ? Math.max(10, Math.min(500, Number(settings.size) || 50)) : mapGridSettings.size,
+      thickness: settings.thickness !== undefined ? Math.max(0.5, Math.min(20, Number(settings.thickness) || 1)) : mapGridSettings.thickness,
+      color: typeof settings.color === 'string' ? settings.color : mapGridSettings.color,
+      opacity: settings.opacity !== undefined ? Math.max(0, Math.min(1, Number(settings.opacity) ?? 0.35)) : mapGridSettings.opacity,
+      style: ['solid', 'dashed', 'dotted'].includes(settings.style) ? settings.style : mapGridSettings.style,
+      snapToGrid: settings.snapToGrid !== undefined ? !!settings.snapToGrid : mapGridSettings.snapToGrid,
+      showCoordinates: settings.showCoordinates !== undefined ? !!settings.showCoordinates : mapGridSettings.showCoordinates
+    };
+
+    io.emit('mapGridUpdated', mapGridSettings);
   });
 
   // ---- Token Görünüm Güncelle ----
@@ -3464,6 +3499,7 @@ async function backupMapState() {
     const payload = {
       id: 1,
       current_map: typeof mapBgUrl !== 'undefined' ? mapBgUrl : '',
+      grid_data: typeof mapGridSettings !== 'undefined' ? mapGridSettings : null,
       fog_data: typeof fogGrid !== 'undefined' ? fogGrid : null,
       fog_uncovered: typeof fogUncovered !== 'undefined' ? fogUncovered : null,
       markers: typeof markers !== 'undefined' ? markers : {},
@@ -3476,7 +3512,7 @@ async function backupMapState() {
       .upsert(payload);
 
     if (error && error.message && error.message.includes('column')) {
-      const { game_mode, ...safePayload } = payload;
+      const { game_mode, grid_data, ...safePayload } = payload;
       const retry = await supabase.from('map_state').upsert(safePayload);
       error = retry.error;
     }
@@ -3515,6 +3551,9 @@ async function restoreMapState() {
 
     if (data) {
       if (data.current_map) mapBgUrl = data.current_map;
+      if (data.grid_data && typeof data.grid_data === 'object') {
+        mapGridSettings = { ...mapGridSettings, ...data.grid_data };
+      }
       if (data.fog_data) fogGrid = data.fog_data;
       if (data.fog_uncovered) fogUncovered = data.fog_uncovered;
       if (data.markers && typeof data.markers === 'object') {
