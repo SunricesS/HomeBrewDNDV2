@@ -535,6 +535,9 @@ socket.on('updateBg', (url) => {
       gameMap.style.width = Math.max(img.width, 800) + 'px';
       gameMap.style.height = Math.max(img.height, 600) + 'px';
       if (typeof resizeCanvas === 'function') resizeCanvas();
+      if (window.__webdnd_grid && typeof window.__webdnd_grid.onBackgroundLoaded === 'function') {
+        window.__webdnd_grid.onBackgroundLoaded(img.width, img.height);
+      }
     };
     img.onerror = () => {
       console.error('Arka plan resmi yüklenemedi:', url);
@@ -545,6 +548,9 @@ socket.on('updateBg', (url) => {
     gameMap.style.width = '2000px';
     gameMap.style.height = '1500px';
     if (typeof resizeCanvas === 'function') resizeCanvas();
+    if (window.__webdnd_grid && typeof window.__webdnd_grid.onBackgroundLoaded === 'function') {
+      window.__webdnd_grid.onBackgroundLoaded(2000, 1500);
+    }
   }
 });
 
@@ -1195,8 +1201,23 @@ document.addEventListener('touchmove', (e) => {
 document.addEventListener('mouseup', () => {
   if (isDragging && draggedToken) {
     const id = draggedToken.dataset.id;
-    const finalX = parseFloat(draggedToken.style.left);
-    const finalY = parseFloat(draggedToken.style.top);
+    let finalX = parseFloat(draggedToken.style.left);
+    let finalY = parseFloat(draggedToken.style.top);
+
+    // Hücreye Hizalama (Snap to Grid)
+    if (window.__webdnd_grid && typeof window.__webdnd_grid.isSnapEnabled === 'function' && window.__webdnd_grid.isSnapEnabled()) {
+      const tSize = draggedToken.offsetWidth || 50;
+      const snapped = window.__webdnd_grid.snap(finalX, finalY, tSize);
+      finalX = snapped.x;
+      finalY = snapped.y;
+      draggedToken.style.transition = 'left 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2), top 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2)';
+      draggedToken.style.left = finalX + 'px';
+      draggedToken.style.top = finalY + 'px';
+      setTimeout(() => {
+        if (draggedToken) draggedToken.style.transition = '';
+      }, 160);
+    }
+
     if (id && !isNaN(finalX) && !isNaN(finalY)) {
       if (allPlayers[id]) {
         allPlayers[id].x = finalX;
@@ -1216,8 +1237,23 @@ document.addEventListener('mouseup', () => {
 document.addEventListener('touchend', () => {
   if (isDragging && draggedToken) {
     const id = draggedToken.dataset.id;
-    const finalX = parseFloat(draggedToken.style.left);
-    const finalY = parseFloat(draggedToken.style.top);
+    let finalX = parseFloat(draggedToken.style.left);
+    let finalY = parseFloat(draggedToken.style.top);
+
+    // Hücreye Hizalama (Snap to Grid)
+    if (window.__webdnd_grid && typeof window.__webdnd_grid.isSnapEnabled === 'function' && window.__webdnd_grid.isSnapEnabled()) {
+      const tSize = draggedToken.offsetWidth || 50;
+      const snapped = window.__webdnd_grid.snap(finalX, finalY, tSize);
+      finalX = snapped.x;
+      finalY = snapped.y;
+      draggedToken.style.transition = 'left 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2), top 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2)';
+      draggedToken.style.left = finalX + 'px';
+      draggedToken.style.top = finalY + 'px';
+      setTimeout(() => {
+        if (draggedToken) draggedToken.style.transition = '';
+      }, 160);
+    }
+
     if (id && !isNaN(finalX) && !isNaN(finalY)) {
       if (allPlayers[id]) {
         allPlayers[id].x = finalX;
@@ -1297,6 +1333,10 @@ if (btnAddMarker) {
     // Cansız Obje Ayarlarını Al (Opsiyonel)
     const objectType = document.getElementById('dm-marker-type')?.value || 'creature';
     let objectConfig = null;
+    let spawnX = 200;
+    let spawnY = 200;
+    let spawnSize = size;
+
     if (objectType !== 'creature') {
       const getObjNum = (id, def) => { const el = document.getElementById(id); return el && el.value !== '' ? parseInt(el.value) : def; };
       if (objectType === 'spawner') {
@@ -1308,6 +1348,60 @@ if (btnAddMarker) {
           destroyOnBreak: Boolean(document.getElementById('dm-marker-obj-spawner-destroy')?.checked),
           totalSpawnedSoFar: 0
         };
+      } else if (objectType === 'terrain') {
+        const durationVal = Math.max(1, Math.min(100, getObjNum('dm-marker-obj-terrain-duration', 5)));
+        const themeVal = document.getElementById('dm-marker-obj-terrain-theme')?.value || 'fire';
+        let terrainPoints = window.__webdnd_pendingTerrainPoints;
+
+        // Serbest çizim yapılmadıysa varsayılan organik bir poligon üret
+        if (!Array.isArray(terrainPoints) || terrainPoints.length < 3) {
+          const cx = 350, cy = 350, r = 120;
+          terrainPoints = [];
+          const numPts = 10;
+          for (let i = 0; i < numPts; i++) {
+            const angle = (i / numPts) * Math.PI * 2;
+            const variance = 0.75 + Math.sin(i * 2.3) * 0.25;
+            terrainPoints.push({
+              x: Math.round(cx + Math.cos(angle) * r * variance),
+              y: Math.round(cy + Math.sin(angle) * r * variance)
+            });
+          }
+        }
+
+        // Bounding box ve merkez hesapla
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        terrainPoints.forEach(p => {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
+        });
+        spawnX = Math.round((minX + maxX) / 2);
+        spawnY = Math.round((minY + maxY) / 2);
+        spawnSize = Math.max(60, Math.round(Math.max(maxX - minX, maxY - minY)));
+
+        objectConfig = {
+          points: terrainPoints,
+          duration: durationVal,
+          remainingDuration: durationVal,
+          theme: themeVal,
+          damage: getObjNum('dm-marker-obj-damage', 10),
+          damageType: document.getElementById('dm-marker-obj-damage-type')?.value || 'fire',
+          targetFilter: document.getElementById('dm-marker-obj-target-filter')?.value || 'all',
+          triggerTiming: document.getElementById('dm-marker-obj-timing')?.value || 'turn',
+          statusEffects: Array.isArray(createObjSelectedEffects) ? [...createObjSelectedEffects] : []
+        };
+
+        // Bekleyen noktaları temizle ve butonu sıfırla
+        window.__webdnd_pendingTerrainPoints = null;
+        const btnDraw = document.getElementById('dm-marker-btn-draw-terrain');
+        const statusWrap = document.getElementById('dm-marker-terrain-drawn-status');
+        if (btnDraw) {
+          btnDraw.innerHTML = '<span>🖌️</span> <span>Haritada Araziyi Çiz (Fare ile Serbest Alan)</span>';
+          btnDraw.style.background = '';
+          btnDraw.style.borderColor = '';
+        }
+        if (statusWrap) statusWrap.style.display = 'none';
       } else {
         objectConfig = {
           radius: getObjNum('dm-marker-obj-radius', objectType === 'explosive' ? 120 : 150),
@@ -1322,7 +1416,7 @@ if (btnAddMarker) {
     }
 
     socket.emit('createMarker', {
-      name, color, x: 200, y: 200, imgUrl, hp, maxHp, size, ac, acBonus, stats, assignedAttacks, hasDarkness, darkness, maxDarkness,
+      name, color, x: spawnX, y: spawnY, imgUrl, hp, maxHp, size: spawnSize, ac, acBonus, stats, assignedAttacks, hasDarkness, darkness, maxDarkness,
       objectType, objectConfig
     });
 
@@ -1673,6 +1767,21 @@ function applyTokenPresetToForm(preset) {
     const spDes = document.getElementById('dm-marker-obj-spawner-destroy');
     if (spDes) spDes.checked = cfg.destroyOnBreak !== false;
 
+    // Terrain alanları
+    const terrDur = document.getElementById('dm-marker-obj-terrain-duration');
+    if (terrDur && cfg.duration != null) terrDur.value = cfg.duration;
+    const terrTheme = document.getElementById('dm-marker-obj-terrain-theme');
+    if (terrTheme && cfg.theme) terrTheme.value = cfg.theme;
+    if (Array.isArray(cfg.points)) {
+      window.__webdnd_pendingTerrainPoints = [...cfg.points];
+      const ptsCount = document.getElementById('dm-marker-terrain-points-count');
+      const statusWrap = document.getElementById('dm-marker-terrain-drawn-status');
+      if (ptsCount && statusWrap) {
+        ptsCount.textContent = cfg.points.length;
+        statusWrap.style.display = 'block';
+      }
+    }
+
     if (Array.isArray(cfg.statusEffects) && typeof createObjSelectedEffects !== 'undefined') {
       createObjSelectedEffects = [...cfg.statusEffects];
       if (typeof renderCreateObjSelectedEffects === 'function') {
@@ -1804,6 +1913,19 @@ function setupTokenPresetControls() {
             spawnTiming: document.getElementById('dm-marker-obj-spawner-timing')?.value || 'turn',
             destroyOnBreak: Boolean(document.getElementById('dm-marker-obj-spawner-destroy')?.checked),
             totalSpawnedSoFar: 0
+          };
+        } else if (objectType === 'terrain') {
+          const durationVal = Math.max(1, Math.min(100, getObjNum('dm-marker-obj-terrain-duration', 5)));
+          objectConfig = {
+            duration: durationVal,
+            remainingDuration: durationVal,
+            theme: document.getElementById('dm-marker-obj-terrain-theme')?.value || 'fire',
+            damage: getObjNum('dm-marker-obj-damage', 0),
+            damageType: document.getElementById('dm-marker-obj-damage-type')?.value || 'fire',
+            targetFilter: document.getElementById('dm-marker-obj-target-filter')?.value || 'all',
+            triggerTiming: document.getElementById('dm-marker-obj-timing')?.value || 'turn',
+            statusEffects: Array.isArray(createObjSelectedEffects) ? [...createObjSelectedEffects] : [],
+            points: window.__webdnd_pendingTerrainPoints || null
           };
         } else {
           objectConfig = {
@@ -2224,6 +2346,10 @@ function openMarkerEditor(markerInput) {
   const editSpawnerDestroyCb = document.getElementById('dm-marker-edit-obj-spawner-destroy');
   if (editSpawnerDestroyCb) editSpawnerDestroyCb.checked = cfg.destroyOnBreak !== false;
 
+  // Terrain alanları
+  setElVal('dm-marker-edit-obj-terrain-duration', cfg.remainingDuration != null ? cfg.remainingDuration : (cfg.duration != null ? cfg.duration : 5));
+  setElVal('dm-marker-edit-obj-terrain-theme', cfg.theme || 'fire');
+
   const destroyCb = document.getElementById('dm-marker-edit-obj-destroy');
   if (destroyCb) destroyCb.checked = cfg.destroyOnExplode !== false;
 
@@ -2545,15 +2671,45 @@ if (btnSaveMarkerEdit) {
     let objectConfig = null;
     if (objectType !== 'creature') {
       const getObjNum = (id, def) => { const el = document.getElementById(id); return el && el.value !== '' ? parseInt(el.value) : def; };
-      objectConfig = {
-        radius: getObjNum('dm-marker-edit-obj-radius', objectType === 'explosive' ? 120 : 150),
-        damage: getObjNum('dm-marker-edit-obj-damage', 0),
-        damageType: document.getElementById('dm-marker-edit-obj-damage-type')?.value || (objectType === 'explosive' ? 'fire' : 'necrotic'),
-        targetFilter: document.getElementById('dm-marker-edit-obj-target-filter')?.value || 'all',
-        destroyOnExplode: Boolean(document.getElementById('dm-marker-edit-obj-destroy')?.checked),
-        triggerTiming: document.getElementById('dm-marker-edit-obj-timing')?.value || 'turn',
-        statusEffects: Array.isArray(editObjSelectedEffects) ? [...editObjSelectedEffects] : []
-      };
+      if (objectType === 'spawner') {
+        objectConfig = {
+          spawnPresetId: document.getElementById('dm-marker-edit-obj-spawner-preset')?.value || '',
+          spawnCount: Math.max(1, Math.min(10, getObjNum('dm-marker-edit-obj-spawner-count', 1))),
+          spawnRadius: Math.max(40, Math.min(500, getObjNum('dm-marker-edit-obj-spawner-radius', 85))),
+          spawnTiming: document.getElementById('dm-marker-edit-obj-spawner-timing')?.value || 'turn',
+          destroyOnBreak: Boolean(document.getElementById('dm-marker-edit-obj-spawner-destroy')?.checked),
+          totalSpawnedSoFar: 0
+        };
+      } else if (objectType === 'terrain') {
+        const existingM = window.__webdnd_markers ? window.__webdnd_markers[editingMarkerId] : null;
+        const existingCfg = existingM?.objectConfig || {};
+        const pts = (window.__webdnd_pendingTerrainPoints && window.__webdnd_pendingTerrainPoints.length >= 3)
+          ? window.__webdnd_pendingTerrainPoints
+          : (existingCfg.points || []);
+        const durationVal = Math.max(0, Math.min(100, getObjNum('dm-marker-edit-obj-terrain-duration', 5)));
+        objectConfig = {
+          points: pts,
+          duration: existingCfg.duration || durationVal,
+          remainingDuration: durationVal,
+          theme: document.getElementById('dm-marker-edit-obj-terrain-theme')?.value || existingCfg.theme || 'fire',
+          damage: getObjNum('dm-marker-edit-obj-damage', 0),
+          damageType: document.getElementById('dm-marker-edit-obj-damage-type')?.value || 'fire',
+          targetFilter: document.getElementById('dm-marker-edit-obj-target-filter')?.value || 'all',
+          triggerTiming: document.getElementById('dm-marker-edit-obj-timing')?.value || 'turn',
+          statusEffects: Array.isArray(editObjSelectedEffects) ? [...editObjSelectedEffects] : []
+        };
+        window.__webdnd_pendingTerrainPoints = null;
+      } else {
+        objectConfig = {
+          radius: getObjNum('dm-marker-edit-obj-radius', objectType === 'explosive' ? 120 : 150),
+          damage: getObjNum('dm-marker-edit-obj-damage', 0),
+          damageType: document.getElementById('dm-marker-edit-obj-damage-type')?.value || (objectType === 'explosive' ? 'fire' : 'necrotic'),
+          targetFilter: document.getElementById('dm-marker-edit-obj-target-filter')?.value || 'all',
+          destroyOnExplode: Boolean(document.getElementById('dm-marker-edit-obj-destroy')?.checked),
+          triggerTiming: document.getElementById('dm-marker-edit-obj-timing')?.value || 'turn',
+          statusEffects: Array.isArray(editObjSelectedEffects) ? [...editObjSelectedEffects] : []
+        };
+      }
     }
 
     socket.emit('editMarker', {
@@ -2762,8 +2918,12 @@ function updateTokenObjectVisuals(t, data) {
     badgeEl.className = 'token-object-badge badge-spawner';
     badgeEl.textContent = '🌀';
     badgeEl.title = 'Çağırıcı / Yuva';
+  } else if (data.isMarker && data.objectType === 'terrain') {
+    t.classList.add('token-object', 'token-object-terrain');
+    t.classList.remove('token-object-explosive', 'token-object-aura', 'token-object-spawner');
+    if (badgeEl) badgeEl.remove();
   } else {
-    t.classList.remove('token-object', 'token-object-explosive', 'token-object-aura', 'token-object-spawner');
+    t.classList.remove('token-object', 'token-object-explosive', 'token-object-aura', 'token-object-spawner', 'token-object-terrain');
     if (badgeEl) badgeEl.remove();
   }
 
@@ -2788,15 +2948,16 @@ function setupObjectTypeControls() {
   const createTimingRow = document.getElementById('dm-marker-obj-timing-row');
   const createBadgeTitle = document.getElementById('dm-marker-object-badge-title');
   const createSpawnerSection = document.getElementById('dm-marker-obj-spawner-section');
+  const createTerrainSection = document.getElementById('dm-marker-obj-terrain-section');
 
   const updateCreateUI = (val) => {
     if (!createObjConfigWrap) return;
-    const regularGrids = createObjConfigWrap.querySelectorAll('.stats-grid-2col, #dm-marker-obj-destroy-row, #dm-marker-obj-timing-row, .form-group:not(#dm-marker-obj-spawner-section *)');
     if (val === 'explosive') {
       createObjConfigWrap.classList.remove('hidden');
       if (createDestroyRow) createDestroyRow.classList.remove('hidden');
       if (createTimingRow) createTimingRow.classList.add('hidden');
       if (createSpawnerSection) createSpawnerSection.classList.add('hidden');
+      if (createTerrainSection) createTerrainSection.classList.add('hidden');
       if (createBadgeTitle) createBadgeTitle.textContent = '💣 Patlayıcı Nesne Ayarları';
       const dmgType = document.getElementById('dm-marker-obj-damage-type');
       if (dmgType && (!dmgType.value || dmgType.value === 'necrotic')) dmgType.value = 'fire';
@@ -2806,6 +2967,7 @@ function setupObjectTypeControls() {
       if (createDestroyRow) createDestroyRow.classList.add('hidden');
       if (createTimingRow) createTimingRow.classList.remove('hidden');
       if (createSpawnerSection) createSpawnerSection.classList.add('hidden');
+      if (createTerrainSection) createTerrainSection.classList.add('hidden');
       if (createBadgeTitle) createBadgeTitle.textContent = '🔮 Aura / Totem Ayarları';
       const dmgType = document.getElementById('dm-marker-obj-damage-type');
       if (dmgType && (!dmgType.value || dmgType.value === 'fire')) dmgType.value = 'necrotic';
@@ -2815,8 +2977,22 @@ function setupObjectTypeControls() {
       if (createDestroyRow) createDestroyRow.classList.add('hidden');
       if (createTimingRow) createTimingRow.classList.add('hidden');
       if (createSpawnerSection) createSpawnerSection.classList.remove('hidden');
+      if (createTerrainSection) createTerrainSection.classList.add('hidden');
       if (createBadgeTitle) createBadgeTitle.textContent = '🌀 Çağırıcı / Yuva Ayarları';
       createObjConfigWrap.querySelectorAll('.stats-grid-2col').forEach(el => el.classList.add('hidden'));
+    } else if (val === 'terrain') {
+      createObjConfigWrap.classList.remove('hidden');
+      if (createDestroyRow) createDestroyRow.classList.add('hidden');
+      if (createTimingRow) createTimingRow.classList.remove('hidden');
+      if (createSpawnerSection) createSpawnerSection.classList.add('hidden');
+      if (createTerrainSection) createTerrainSection.classList.remove('hidden');
+      if (createBadgeTitle) createBadgeTitle.textContent = '🌋 Tehlikeli Arazi Ayarları';
+      const dmgType = document.getElementById('dm-marker-obj-damage-type');
+      if (dmgType && (!dmgType.value || dmgType.value === 'necrotic')) dmgType.value = 'fire';
+      createObjConfigWrap.querySelectorAll('.stats-grid-2col').forEach(el => {
+        if (el.querySelector('#dm-marker-obj-radius')) el.classList.add('hidden');
+        else el.classList.remove('hidden');
+      });
     } else {
       createObjConfigWrap.classList.add('hidden');
     }
@@ -2833,9 +3009,11 @@ function setupObjectTypeControls() {
   const editTimingRow = document.getElementById('dm-marker-edit-obj-timing-row');
   const editBadgeTitle = document.getElementById('dm-marker-edit-object-badge-title');
   const editSpawnerSection = document.getElementById('dm-marker-edit-obj-spawner-section');
+  const editTerrainSection = document.getElementById('dm-marker-edit-obj-terrain-section');
   const btnDetonate = document.getElementById('dm-marker-btn-test-detonate');
   const btnAura = document.getElementById('dm-marker-btn-test-aura');
   const btnTestSpawn = document.getElementById('dm-marker-btn-test-spawn');
+  const btnTestTerrain = document.getElementById('dm-marker-btn-test-terrain');
 
   const updateEditUI = (val) => {
     if (!editObjConfigWrap) return;
@@ -2844,9 +3022,11 @@ function setupObjectTypeControls() {
       if (editDestroyRow) editDestroyRow.classList.remove('hidden');
       if (editTimingRow) editTimingRow.classList.add('hidden');
       if (editSpawnerSection) editSpawnerSection.classList.add('hidden');
+      if (editTerrainSection) editTerrainSection.classList.add('hidden');
       if (btnDetonate) btnDetonate.style.display = 'inline-block';
       if (btnAura) btnAura.style.display = 'none';
       if (btnTestSpawn) btnTestSpawn.style.display = 'none';
+      if (btnTestTerrain) btnTestTerrain.style.display = 'none';
       if (editBadgeTitle) editBadgeTitle.textContent = '💣 Patlayıcı Nesne Ayarları';
       editObjConfigWrap.querySelectorAll('.stats-grid-2col').forEach(el => el.classList.remove('hidden'));
     } else if (val === 'aura') {
@@ -2854,9 +3034,11 @@ function setupObjectTypeControls() {
       if (editDestroyRow) editDestroyRow.classList.add('hidden');
       if (editTimingRow) editTimingRow.classList.remove('hidden');
       if (editSpawnerSection) editSpawnerSection.classList.add('hidden');
+      if (editTerrainSection) editTerrainSection.classList.add('hidden');
       if (btnDetonate) btnDetonate.style.display = 'none';
       if (btnAura) btnAura.style.display = 'inline-block';
       if (btnTestSpawn) btnTestSpawn.style.display = 'none';
+      if (btnTestTerrain) btnTestTerrain.style.display = 'none';
       if (editBadgeTitle) editBadgeTitle.textContent = '🔮 Aura / Totem Ayarları';
       editObjConfigWrap.querySelectorAll('.stats-grid-2col').forEach(el => el.classList.remove('hidden'));
     } else if (val === 'spawner') {
@@ -2864,22 +3046,50 @@ function setupObjectTypeControls() {
       if (editDestroyRow) editDestroyRow.classList.add('hidden');
       if (editTimingRow) editTimingRow.classList.add('hidden');
       if (editSpawnerSection) editSpawnerSection.classList.remove('hidden');
+      if (editTerrainSection) editTerrainSection.classList.add('hidden');
       if (btnDetonate) btnDetonate.style.display = 'none';
       if (btnAura) btnAura.style.display = 'none';
       if (btnTestSpawn) btnTestSpawn.style.display = 'inline-block';
+      if (btnTestTerrain) btnTestTerrain.style.display = 'none';
       if (editBadgeTitle) editBadgeTitle.textContent = '🌀 Çağırıcı / Yuva Ayarları';
       editObjConfigWrap.querySelectorAll('.stats-grid-2col').forEach(el => el.classList.add('hidden'));
+    } else if (val === 'terrain') {
+      editObjConfigWrap.classList.remove('hidden');
+      if (editDestroyRow) editDestroyRow.classList.add('hidden');
+      if (editTimingRow) editTimingRow.classList.remove('hidden');
+      if (editSpawnerSection) editSpawnerSection.classList.add('hidden');
+      if (editTerrainSection) editTerrainSection.classList.remove('hidden');
+      if (btnDetonate) btnDetonate.style.display = 'none';
+      if (btnAura) btnAura.style.display = 'none';
+      if (btnTestSpawn) btnTestSpawn.style.display = 'none';
+      if (btnTestTerrain) btnTestTerrain.style.display = 'inline-block';
+      if (editBadgeTitle) editBadgeTitle.textContent = '🌋 Tehlikeli Arazi Ayarları';
+      editObjConfigWrap.querySelectorAll('.stats-grid-2col').forEach(el => {
+        if (el.querySelector('#dm-marker-edit-obj-radius')) el.classList.add('hidden');
+        else el.classList.remove('hidden');
+      });
     } else {
       editObjConfigWrap.classList.add('hidden');
       if (btnDetonate) btnDetonate.style.display = 'none';
       if (btnAura) btnAura.style.display = 'none';
       if (btnTestSpawn) btnTestSpawn.style.display = 'none';
+      if (btnTestTerrain) btnTestTerrain.style.display = 'none';
     }
   };
 
   if (editTypeSelect && editObjConfigWrap && !editTypeSelect._bound) {
     editTypeSelect._bound = true;
     editTypeSelect.addEventListener('change', () => updateEditUI(editTypeSelect.value));
+  }
+
+  if (btnTestTerrain && !btnTestTerrain._bound) {
+    btnTestTerrain._bound = true;
+    btnTestTerrain.addEventListener('click', () => {
+      if (!editingMarkerId) return;
+      socket.emit('triggerObjectTerrain', editingMarkerId);
+      btnTestTerrain.textContent = '⚡ Tetiklendi!';
+      setTimeout(() => { if (btnTestTerrain) btnTestTerrain.textContent = '🌋 Alanı Tetikle'; }, 1200);
+    });
   }
 
   if (btnTestSpawn && !btnTestSpawn._bound) {
@@ -4050,6 +4260,9 @@ if (canvas && ctx) {
     canvas.width = gameMap.clientWidth || 2000;
     canvas.height = gameMap.clientHeight || 1500;
     redrawHistory();
+    if (window.__webdnd_grid && typeof window.__webdnd_grid.resize === 'function') {
+      window.__webdnd_grid.resize();
+    }
   }
 
   window.addEventListener('resize', resizeCanvas);

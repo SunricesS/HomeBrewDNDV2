@@ -23,6 +23,9 @@
         <!-- Left Side (75%): Game Map -->
         <div id="game-map">
             <div id="map-content">
+                <canvas id="grid-layer"></canvas>
+                <!-- Terrain Hazards Layer (Animated SVG Polygons for Irregular Areas) -->
+                <svg id="terrain-hazards-layer" class="terrain-hazards-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9;"></svg>
                 <canvas id="drawing-layer"></canvas>
                 <!-- Area of Effect Targeting Layer (AoE) -->
                 <div id="aoe-targeting-layer" class="aoe-targeting-layer hidden">
@@ -1037,6 +1040,7 @@
 
                         <!-- Sticky Attack Button at bottom of Combat Tab -->
                         <div class="tab-sticky-attack-bar">
+                            <button type="button" id="atk-btn-target-location" class="atk-btn secondary hidden" style="margin-bottom:6px; width:100%; border:1.5px solid #f59e0b; color:#fef08a; background:rgba(245, 158, 11, 0.15);" data-i18n="btn_select_aoe_target">🎯 Haritada Hedef Seç</button>
                             <button id="atk-btn-attack" class="atk-btn atk-btn-attack atk-btn-physical" data-i18n="btn_attack">⚔️ ATTACK</button>
                         </div>
                     </div>
@@ -1185,6 +1189,7 @@
                                 <option value="explosive" data-i18n="entity_explosive">💣 Explosive Object (Detonates on death)</option>
                                 <option value="aura" data-i18n="entity_aura">🔮 Aura / Totem (Emits aura every turn)</option>
                                 <option value="spawner" data-i18n="entity_spawner">🌀 Spawner / Nest (Spawns enemies every turn)</option>
+                                <option value="terrain" data-i18n="entity_terrain">🌋 Arazi (Tehlikeli Zemin / Serbest Çizim)</option>
                             </select>
                         </div>
 
@@ -1197,14 +1202,14 @@
                                 <span id="dm-marker-object-hint" style="font-size:10px; color:#cbd5e1;" data-i18n="object_hint_explosion">Explosion / Area Effect</span>
                             </div>
                             <div class="stats-grid stats-grid-2col">
-                                <div class="form-group">
+                                <div class="form-group" id="dm-marker-obj-radius-wrap">
                                     <label style="font-size:11px;" data-i18n="object_radius_label">Effect Radius (px):</label>
                                     <input type="number" id="dm-marker-obj-radius" value="120" min="20" max="2000"
                                         placeholder="120">
                                 </div>
                                 <div class="form-group">
                                     <label style="font-size:11px;" data-i18n="object_damage_label">Damage Amount:</label>
-                                    <input type="number" id="dm-marker-obj-damage" value="20" min="0" placeholder="0">
+                                    <input type="number" id="dm-marker-obj-damage" value="10" min="0" placeholder="0">
                                 </div>
                             </div>
                             <div class="stats-grid stats-grid-2col" style="margin-top: 4px;">
@@ -1258,9 +1263,9 @@
                                     style="cursor:pointer; font-size:11px; color:#f87171; margin:0;" data-i18n="destroy_on_detonate">💥 Remove from map when exploded</label>
                             </div>
 
-                            <!-- Aura Specific: Timing -->
+                            <!-- Aura / Terrain Specific: Timing -->
                             <div id="dm-marker-obj-timing-row" class="form-group hidden" style="margin-top:6px;">
-                                <label style="font-size:11px; color:#c084fc;" data-i18n="aura_timing_label">🔮 Aura Trigger Timing:</label>
+                                <label style="font-size:11px; color:#c084fc;" id="dm-marker-obj-timing-label" data-i18n="aura_timing_label">🔮 Aura Trigger Timing:</label>
                                 <select id="dm-marker-obj-timing" class="atk-select" style="font-size:11px;">
                                     <option value="turn" data-i18n="aura_timing_turn">⚡ On its turn (Every Turn)</option>
                                     <option value="round" data-i18n="aura_timing_round">🔄 At Round Start</option>
@@ -1303,6 +1308,38 @@
                                         style="width:15px; height:15px; cursor:pointer;">
                                     <label for="dm-marker-obj-spawner-destroy"
                                         style="cursor:pointer; font-size:11px; color:#f87171; margin:0;" data-i18n="spawner_destroy_label">💥 Destroy / Remove from map when HP reaches 0</label>
+                                </div>
+                            </div>
+
+                            <!-- Terrain (Arazi) Specific -->
+                            <div id="dm-marker-obj-terrain-section" class="hidden"
+                                style="margin-top:6px; background:rgba(217, 119, 6, 0.12); border:1px solid rgba(245, 158, 11, 0.35); border-radius:6px; padding:10px;">
+                                <div class="stats-grid stats-grid-2col">
+                                    <div class="form-group">
+                                        <label style="font-size:11px; color:#fde047; font-weight:700;" data-i18n="terrain_duration_label">⏳ Arazi Ömrü (Tur):</label>
+                                        <input type="number" id="dm-marker-obj-terrain-duration" value="5" min="1" max="100" placeholder="5">
+                                        <small style="font-size:10px; color:#94a3b8;" data-i18n="terrain_duration_hint">Tur bitince kendini yok eder</small>
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="font-size:11px; color:#fde047; font-weight:700;" data-i18n="terrain_theme_label">🎨 Arazi Görsel Teması:</label>
+                                        <select id="dm-marker-obj-terrain-theme" class="atk-select" style="font-size:11px;">
+                                            <option value="fire" data-i18n="terrain_theme_fire">🔥 Lav & Ateş Denizi</option>
+                                            <option value="acid" data-i18n="terrain_theme_acid">🧪 Zehirli Asit Havuzu</option>
+                                            <option value="poison" data-i18n="terrain_theme_poison">💨 Boğucu Gaz / Sis</option>
+                                            <option value="ice" data-i18n="terrain_theme_ice">❄️ Dondurucu Buz Zemini</option>
+                                            <option value="bramble" data-i18n="terrain_theme_bramble">🌿 Dikenli Çalı & Sarmaşık</option>
+                                            <option value="custom" data-i18n="terrain_theme_custom">✨ Büyülü Enerji Alanı</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div style="margin-top:8px;">
+                                    <button type="button" id="dm-marker-btn-draw-terrain" class="btn primary action-btn"
+                                        style="width:100%; background:linear-gradient(135deg, #d97706, #b45309); border-color:#f59e0b; font-weight:700; font-size:12px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                                        <span>🖌️</span> <span data-i18n="btn_draw_terrain">Haritada Araziyi Çiz (Fare ile Serbest Alan)</span>
+                                    </button>
+                                    <div id="dm-marker-terrain-drawn-status" style="font-size:11px; color:#a3e635; margin-top:4px; font-weight:600; display:none; text-align:center;">
+                                        ✅ Serbest şekilli arazi çizildi (<span id="dm-marker-terrain-points-count">0</span> köşe noktası)
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1419,6 +1456,140 @@
   </div>
   <button id="btn-set-bg" class="btn secondary action-btn" style="width:100%;" data-i18n="change_bg_btn">Change Background</button>
 
+                        </div>
+                        <div class="panel-module-docked-notice hidden">
+                            <span>📍 Bu modül haritada serbest pencere olarak açık.</span>
+                            <button type="button" class="btn-dock-back-inline">Panele Geri Al</button>
+                        </div>
+                    </div>
+
+                    <!-- Module: map-grid (Harita Izgarası & Hücre Ayarları) -->
+                    <div class="panel-module" id="module-map-grid" data-module-id="map-grid">
+                        <div class="panel-module-header">
+                            <div class="panel-module-title-group">
+                                <span class="panel-module-drag-handle" title="Sıralamayı Değiştir (Sürükle)">⋮⋮</span>
+                                <span class="panel-module-icon">📐</span>
+                                <span class="panel-module-title" data-i18n="module_map_grid">Harita Izgarası & Hücre Ayarları</span>
+                            </div>
+                            <div class="panel-module-actions">
+                                <button type="button" class="module-action-btn module-reorder-up" title="Yukarı">▲</button>
+                                <button type="button" class="module-action-btn module-reorder-down" title="Aşağı">▼</button>
+                                <button type="button" class="module-action-btn module-popout-btn" title="Pencereyi Ayır (Haritaya Sabitle)">↗</button>
+                                <button type="button" class="module-action-btn module-collapse-btn" title="Aç / Kapat">▾</button>
+                            </div>
+                        </div>
+                        <div class="panel-module-body">
+                            <!-- Grid Active Toggle Switch -->
+                            <div class="grid-setting-toggle-row">
+                                <label class="grid-toggle-switch">
+                                    <input type="checkbox" id="grid-toggle-enabled" checked>
+                                    <span class="grid-toggle-slider"></span>
+                                    <span class="grid-toggle-label" data-i18n="grid_enabled_label">Izgarayı Göster (Grid Aktif)</span>
+                                </label>
+                            </div>
+
+                            <!-- Snap to Grid Toggle -->
+                            <div class="grid-setting-toggle-row">
+                                <label class="grid-toggle-switch">
+                                    <input type="checkbox" id="grid-toggle-snap">
+                                    <span class="grid-toggle-slider"></span>
+                                    <span class="grid-toggle-label" data-i18n="grid_snap_label">🧲 Tokenları Hücreye Hizala (Snap)</span>
+                                </label>
+                            </div>
+
+                            <!-- Cell / Square Size -->
+                            <div class="grid-control-group">
+                                <div class="grid-control-header">
+                                    <label for="grid-size-range" data-i18n="grid_size_label">📏 Hücre / Kare Büyüklüğü:</label>
+                                    <span class="grid-val-badge" id="grid-size-val">50 px</span>
+                                </div>
+                                <div class="grid-range-wrap">
+                                    <input type="range" id="grid-size-range" min="20" max="250" step="5" value="50" class="grid-range-slider">
+                                    <input type="number" id="grid-size-num" min="10" max="500" step="1" value="50" class="grid-num-input">
+                                </div>
+                                <div class="grid-presets-row">
+                                    <span class="grid-presets-title" data-i18n="grid_presets_title">Hızlı:</span>
+                                    <button type="button" class="grid-preset-pill" data-size="35">35px</button>
+                                    <button type="button" class="grid-preset-pill active" data-size="50">50px (Standart)</button>
+                                    <button type="button" class="grid-preset-pill" data-size="70">70px (Roll20)</button>
+                                    <button type="button" class="grid-preset-pill" data-size="100">100px (Büyük)</button>
+                                </div>
+                            </div>
+
+                            <!-- Border / Line Thickness -->
+                            <div class="grid-control-group">
+                                <div class="grid-control-header">
+                                    <label for="grid-thickness-range" data-i18n="grid_thickness_label">✏️ Kenar / Çizgi Kalınlığı:</label>
+                                    <span class="grid-val-badge" id="grid-thickness-val">1 px</span>
+                                </div>
+                                <div class="grid-range-wrap">
+                                    <input type="range" id="grid-thickness-range" min="0.5" max="8" step="0.5" value="1" class="grid-range-slider">
+                                    <input type="number" id="grid-thickness-num" min="0.5" max="10" step="0.5" value="1" class="grid-num-input">
+                                </div>
+                            </div>
+
+                            <!-- Color & Opacity -->
+                            <div class="grid-colors-row">
+                                <div class="grid-color-item">
+                                    <div class="grid-control-header">
+                                        <label data-i18n="grid_color_label">🎨 Izgara Rengi:</label>
+                                    </div>
+                                    <div class="grid-color-picker-wrap">
+                                        <input type="color" id="grid-color-input" value="#ffffff" class="grid-color-native">
+                                        <div class="grid-color-quick-swatches">
+                                            <button type="button" class="grid-swatch-btn" data-color="#ffffff" style="background:#ffffff;" title="Beyaz"></button>
+                                            <button type="button" class="grid-swatch-btn" data-color="#000000" style="background:#000000;" title="Siyah"></button>
+                                            <button type="button" class="grid-swatch-btn" data-color="#c5a059" style="background:#c5a059;" title="Altın"></button>
+                                            <button type="button" class="grid-swatch-btn" data-color="#3b82f6" style="background:#3b82f6;" title="Mavi"></button>
+                                            <button type="button" class="grid-swatch-btn" data-color="#ef4444" style="background:#ef4444;" title="Kırmızı"></button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="grid-opacity-item">
+                                    <div class="grid-control-header">
+                                        <label for="grid-opacity-range" data-i18n="grid_opacity_label">👁️ Saydamlık:</label>
+                                        <span class="grid-val-badge" id="grid-opacity-val">%35</span>
+                                    </div>
+                                    <input type="range" id="grid-opacity-range" min="0.05" max="1" step="0.05" value="0.35" class="grid-range-slider" style="margin-top:8px;">
+                                </div>
+                            </div>
+
+                            <!-- Line Style & Show Coordinates -->
+                            <div class="grid-options-row">
+                                <div class="grid-opt-select-group">
+                                    <label data-i18n="grid_style_label">Çizgi Tipi:</label>
+                                    <select id="grid-style-select" class="grid-select">
+                                        <option value="solid" data-i18n="grid_style_solid">Düz Çizgi (Solid)</option>
+                                        <option value="dashed" data-i18n="grid_style_dashed">Kesikli (Dashed)</option>
+                                        <option value="dotted" data-i18n="grid_style_dotted">Noktalı (Dotted)</option>
+                                    </select>
+                                </div>
+                                <label class="grid-coords-checkbox-wrap">
+                                    <input type="checkbox" id="grid-toggle-coords">
+                                    <span data-i18n="grid_show_coords_label">Koordinatları Göster (A1, B2..)</span>
+                                </label>
+                            </div>
+
+                            <!-- Grid Info Summary -->
+                            <div class="grid-info-card" id="grid-info-card">
+                                <div class="grid-info-row">
+                                    <span data-i18n="grid_map_dimensions">Harita Boyutu:</span>
+                                    <strong id="grid-info-dimensions">2000 × 1500 px</strong>
+                                </div>
+                                <div class="grid-info-row">
+                                    <span data-i18n="grid_cell_distribution">Hücre Dağılımı:</span>
+                                    <strong id="grid-info-cells">40 sütun × 30 satır</strong>
+                                </div>
+                                <div class="grid-info-row">
+                                    <span data-i18n="grid_total_cells">Toplam Kare:</span>
+                                    <strong id="grid-info-total">1,200 Hücre (200×150 ft)</strong>
+                                </div>
+                            </div>
+
+                            <!-- Reset Button -->
+                            <div style="display:flex; gap:8px; margin-top:10px;">
+                                <button type="button" id="btn-reset-grid" class="btn secondary" style="flex:1; font-size:12px; padding:6px 10px;" data-i18n="grid_reset_btn">↩️ Varsayılana Sıfırla</button>
+                            </div>
                         </div>
                         <div class="panel-module-docked-notice hidden">
                             <span>📍 Bu modül haritada serbest pencere olarak açık.</span>
@@ -1644,6 +1815,7 @@
                     <option value="explosive" data-i18n="entity_explosive">💣 Explosive Object (Detonates on death)</option>
                     <option value="aura" data-i18n="entity_aura">🔮 Aura / Totem (Emits aura every turn)</option>
                     <option value="spawner" data-i18n="entity_spawner">🌀 Spawner / Nest (Spawns enemies every turn)</option>
+                    <option value="terrain" data-i18n="entity_terrain">🌋 Arazi (Tehlikeli Zemin / Serbest Çizim)</option>
                 </select>
             </div>
 
@@ -1657,6 +1829,8 @@
                             style="background:#dc2626; color:#fff; border-color:#ef4444;" title="Detonate Now" data-i18n="btn_detonate_now">💥 Detonate</button>
                         <button type="button" id="dm-marker-btn-test-aura" class="atk-mini-btn"
                             style="background:#7c3aed; color:#fff; border-color:#a855f7;" title="Pulse Aura" data-i18n="btn_pulse_aura">🔮 Pulse Aura</button>
+                        <button type="button" id="dm-marker-btn-test-terrain" class="atk-mini-btn"
+                            style="background:#d97706; color:#fff; border-color:#f59e0b; display:none;" title="Pulse Terrain Now" data-i18n="btn_pulse_terrain">🌋 Alanı Tetikle</button>
                         <button type="button" id="dm-marker-btn-test-spawn" class="atk-mini-btn"
                             style="background:#059669; color:#fff; border-color:#10b981; display:none;"
                             title="Spawn 1 Wave Now" data-i18n="btn_spawn_wave">🌀 Spawn Wave (Test)</button>
@@ -1765,6 +1939,34 @@
                             style="width:15px; height:15px; cursor:pointer;">
                         <label for="dm-marker-edit-obj-spawner-destroy"
                             style="cursor:pointer; font-size:11px; color:#f87171; margin:0;" data-i18n="spawner_destroy_label">💥 Destroy / Remove from map when HP reaches 0</label>
+                    </div>
+                </div>
+
+                <!-- Terrain (Arazi) Specific (Edit) -->
+                <div id="dm-marker-edit-obj-terrain-section" class="hidden"
+                    style="margin-top:6px; background:rgba(217, 119, 6, 0.12); border:1px solid rgba(245, 158, 11, 0.35); border-radius:6px; padding:10px;">
+                    <div class="stats-grid stats-grid-2col">
+                        <div class="form-group">
+                            <label style="font-size:11px; color:#fde047; font-weight:700;" data-i18n="terrain_duration_label">⏳ Kalan Ömür (Tur):</label>
+                            <input type="number" id="dm-marker-edit-obj-terrain-duration" min="0" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label style="font-size:11px; color:#fde047; font-weight:700;" data-i18n="terrain_theme_label">🎨 Arazi Teması / Rengi:</label>
+                            <select id="dm-marker-edit-obj-terrain-theme" class="atk-select" style="font-size:11px;">
+                                <option value="fire" data-i18n="terrain_theme_fire">🔥 Lav & Ateş Denizi</option>
+                                <option value="acid" data-i18n="terrain_theme_acid">🧪 Zehirli Asit Havuzu</option>
+                                <option value="poison" data-i18n="terrain_theme_poison">💨 Boğucu Gaz / Sis</option>
+                                <option value="ice" data-i18n="terrain_theme_ice">❄️ Dondurucu Buz Zemini</option>
+                                <option value="bramble" data-i18n="terrain_theme_bramble">🌿 Dikenli Çalı & Sarmaşık</option>
+                                <option value="custom" data-i18n="terrain_theme_custom">✨ Büyülü Enerji Alanı</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <button type="button" id="dm-marker-edit-btn-redraw-terrain" class="btn primary action-btn"
+                            style="width:100%; background:linear-gradient(135deg, #d97706, #b45309); border-color:#f59e0b; font-weight:700; font-size:12px; display:flex; align-items:center; justify-content:center; gap:6px;">
+                            <span>🖌️</span> <span data-i18n="btn_redraw_terrain">Haritada Alanı Yeniden Çiz (Serbest Şekil)</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -2325,24 +2527,54 @@
                         </div>
                     </div>
 
-                    <!-- Area Damage (AoE) Config -->
+                    <!-- Saldırı Çeşidi (Delivery Type: Normal, Projectile, Ranged AoE, Dash) -->
                     <div class="stats-grid stats-grid-2col"
-                        style="margin-top:10px; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.28); border-radius:6px; padding:10px 12px;">
-                        <div class="form-group" style="display:flex; flex-direction:column; justify-content:center;">
-                            <label class="status-checkbox-label">
-                                <input type="checkbox" id="atk-builder-is-aoe">
-                                <span style="color:#f87171; font-weight:700;" data-i18n="is_aoe_check">💥 Area Damage (AoE)</span>
-                            </label>
-                            <span style="font-size:11px; color:#94a3b8; margin-top:2px;" data-i18n="is_aoe_desc">Deals explosion damage to surrounding enemies on hit</span>
+                        style="margin-top:10px; background:rgba(245, 158, 11, 0.08); border:1px solid rgba(245, 158, 11, 0.32); border-radius:6px; padding:10px 12px;">
+                        <div class="form-group">
+                            <label style="color:#f59e0b; font-weight:700;" data-i18n="delivery_type_label">🎯 Saldırı Çeşidi:</label>
+                            <select id="atk-builder-delivery-type" class="atk-select">
+                                <option value="normal" data-i18n="delivery_normal">⚔️ Standart / Doğrudan (Melee/Direct)</option>
+                                <option value="projectile" data-i18n="delivery_projectile">🏹 Uzaktan Projectile (Mermi Uçuş Efekti)</option>
+                                <option value="ranged_aoe" data-i18n="delivery_ranged_aoe">💥 Alan Hasarlı Uzaktan Saldırı (Ranged AoE)</option>
+                                <option value="dash" data-i18n="delivery_dash">⚡ Atılma Saldırısı (Dash / Charge Line)</option>
+                            </select>
                         </div>
-                        <div class="form-group" id="atk-builder-aoe-radius-group"
-                            style="display:none; justify-content:center;">
-                            <label style="color:#f87171; font-size:12px; font-weight:600; margin-bottom:4px;" data-i18n="aoe_radius_label">Explosion Radius:</label>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <input type="number" id="atk-builder-aoe-radius" value="1" min="0.5" step="0.5" max="30"
-                                    class="input-light" style="width:75px; text-align:center;">
-                                <span style="font-size:12px; color:#cbd5e1; font-weight:500;" data-i18n="meters_unit">Meters (m)</span>
-                                <span style="font-size:11px; color:#94a3b8;" data-i18n="meters_grid_hint">(~1 grid square)</span>
+                        <div class="form-group" style="display:flex; flex-direction:column; justify-content:center;">
+                            <!-- Ranged AoE Radius Parametresi -->
+                            <div id="atk-builder-aoe-param-row" style="display:none;">
+                                <label style="color:#f87171; font-size:11px; font-weight:600;" data-i18n="aoe_radius_label">Patlama Yarıçapı:</label>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <input type="number" id="atk-builder-aoe-radius" value="2" min="0.5" step="0.5" max="25" class="input-light" style="width:65px; text-align:center;">
+                                    <span style="font-size:11px; color:#cbd5e1;">Hücre / Metre</span>
+                                </div>
+                            </div>
+                            <!-- Dash Corridor Width Parametresi -->
+                            <div id="atk-builder-dash-param-row" style="display:none;">
+                                <label style="color:#38bdf8; font-size:11px; font-weight:600;" data-i18n="dash_width_label">Atılma Çapı / Genişliği (px):</label>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <input type="number" id="atk-builder-dash-width" value="50" min="20" step="10" max="300" class="input-light" style="width:70px; text-align:center;">
+                                    <span style="font-size:11px; color:#cbd5e1;">px (~1 hücre)</span>
+                                </div>
+                            </div>
+                            <input type="checkbox" id="atk-builder-is-aoe" style="display:none;">
+                        </div>
+                    </div>
+
+                    <!-- Saldırı Etkileri (Push & Pull) -->
+                    <div class="stats-grid stats-grid-2col"
+                        style="margin-top:8px; background:rgba(99, 102, 241, 0.08); border:1px solid rgba(99, 102, 241, 0.28); border-radius:6px; padding:10px 12px;">
+                        <div class="form-group">
+                            <label style="color:#818cf8; font-weight:700; font-size:11px;" data-i18n="push_cells_label">💨 Saldırı İttirir (Geri Savurma):</label>
+                            <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+                                <input type="number" id="atk-builder-push-cells" value="0" min="0" max="20" step="1" class="input-light" style="width:60px; text-align:center;">
+                                <span style="font-size:11px; color:#94a3b8;" data-i18n="push_cells_hint">hücre geriye savurur (0 = kapalı)</span>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label style="color:#a78bfa; font-weight:700; font-size:11px;" data-i18n="pull_cells_label">🧲 Saldırı Çeker (Kendine Çekme):</label>
+                            <div style="display:flex; align-items:center; gap:6px; margin-top:2px;">
+                                <input type="number" id="atk-builder-pull-cells" value="0" min="0" max="20" step="1" class="input-light" style="width:60px; text-align:center;">
+                                <span style="font-size:11px; color:#94a3b8;" data-i18n="pull_cells_hint">hücre kendine çeker (0 = kapalı)</span>
                             </div>
                         </div>
                     </div>
@@ -2501,9 +2733,12 @@
     <!-- Socket.io istemci scripti -->
     <script src="/socket.io/socket.io.js"></script>
     <script src="js/client.js?v=9"></script>
+    <script src="js/combat-effects.js?v=1"></script>
     <script src="js/attack-panel.js?v=5"></script>
     <script src="js/combat-tracker.js?v=4"></script>
     <script src="js/aoe-damage.js?v=1"></script>
+    <script src="js/map-grid.js?v=1"></script>
+    <script src="js/terrain-hazard.js?v=1"></script>
     <script src="js/panel-manager.js?v=1"></script>
     <script src="js/layout-editor.js?v=1"></script>
     <script>

@@ -21,6 +21,8 @@
   let selectedTargets = [];    // Array of { type, id, name, data, tokenEl }
   let lastAttackResults = [];  // Array of { totalDamage, targetId, targetType, targetName, attackerName, statusEffectsToApply }
   let pendingAoEExplosions = []; // Array of { cx, cy, radiusPx, damage, affectedTargets }
+  let pendingTargetPoint = null; // { x, y, radiusPx, targets }
+  let pendingDashDest = null;    // { destX, destY, targets }
   let allCharactersCache = [];
 
   // === HAZIR SALDIRI PRESETLERİ STATE ===
@@ -865,6 +867,24 @@
     updatePresetBanner(preset);
     updateTargetResistanceBadges();
 
+    // Yeni: Saldırı Çeşidine göre "Haritada Hedef Seç" Butonunu Güncelle
+    const btnTargetLoc = document.getElementById('atk-btn-target-location');
+    if (btnTargetLoc) {
+      if (preset.deliveryType === 'ranged_aoe') {
+        btnTargetLoc.classList.remove('hidden');
+        btnTargetLoc.textContent = t('btn_select_aoe_target', {}, '🎯 Haritada Hedef Alanı Seç');
+        btnTargetLoc.style.borderColor = '#f59e0b';
+        btnTargetLoc.style.color = '#fef08a';
+      } else if (preset.deliveryType === 'dash') {
+        btnTargetLoc.classList.remove('hidden');
+        btnTargetLoc.textContent = t('btn_select_dash_target', {}, '⚡ Haritada Atılma Hücresini Seç');
+        btnTargetLoc.style.borderColor = '#38bdf8';
+        btnTargetLoc.style.color = '#7dd3fc';
+      } else {
+        btnTargetLoc.classList.add('hidden');
+      }
+    }
+
     // Saldıran token için kuşanma hafızasını kaydet
     if (persistForToken && selectedAttacker) {
       const key = `${selectedAttacker.type}:${selectedAttacker.id}`;
@@ -885,6 +905,11 @@
     if (presetSelect) presetSelect.value = '';
     if (presetInfoBanner) presetInfoBanner.classList.add('hidden');
     if (spellSlotControlGroup) spellSlotControlGroup.style.display = 'none';
+
+    const btnTargetLoc = document.getElementById('atk-btn-target-location');
+    if (btnTargetLoc) btnTargetLoc.classList.add('hidden');
+    pendingTargetPoint = null;
+    pendingDashDest = null;
 
     if (persistForToken && selectedAttacker) {
       const key = `${selectedAttacker.type}:${selectedAttacker.id}`;
@@ -1901,8 +1926,10 @@
           physicalDamageType: body.physicalDamageType || 'slashing'
         });
 
-        // Alan Hasarı (AoE) kontrolü ve çevre hedeflere yayılım
-        if (activeEquippedPreset && activeEquippedPreset.isAoe && !isHeal && (isSuccessfulHit || (body.halfDamageOnMiss && result.totalDamage > 0))) {
+        // Alan Hasarı (AoE) kontrolü ve çevre hedeflere yayılım (Sadece klasik hedef-odaklı AoE'ler için)
+        // Ranged AoE (deliveryType === 'ranged_aoe') ve Dash durumlarında hedefler zaten harita kilit sistemiyle seçilmiştir
+        const isDeliveryAreaOrDash = activeEquippedPreset && (activeEquippedPreset.deliveryType === 'ranged_aoe' || activeEquippedPreset.deliveryType === 'dash');
+        if (activeEquippedPreset && activeEquippedPreset.isAoe && !isDeliveryAreaOrDash && !isHeal && (isSuccessfulHit || (body.halfDamageOnMiss && result.totalDamage > 0))) {
           triggerAoEForTarget(target, result.totalDamage, body);
         }
       }
@@ -1974,6 +2001,8 @@
       if (selectedAttacker && String(t.id) === String(selectedAttacker.id) && t.type === selectedAttacker.type) return false;
       // 3. Bu turda zaten hasar listesinde olanlar hariç
       if (lastAttackResults.some(r => String(r.targetId) === String(t.id) && r.targetType === t.type)) return false;
+      // 4. Doğrudan hedef listesinde (selectedTargets) bulunanlar hariç (2 kez hasar almalarını engelle)
+      if (selectedTargets.some(st => String(st.id) === String(t.id) && st.type === t.type)) return false;
       return true;
     });
 
@@ -2091,8 +2120,8 @@
         await consumePendingSpellSlot();
       }
 
-      // 1. Bekleyen AoE patlama ve sarsıntı efektlerini "Hasarı Uygula" anında tetikle
-      if (pendingAoEExplosions.length > 0) {
+      // 1. Bekleyen AoE patlama ve sarsıntı efektlerini "Hasarı Uygula" anında tetikle (Sadece klasik hedef-odaklı AoE'ler için)
+      if (pendingAoEExplosions.length > 0 && activeEquippedPreset?.deliveryType !== 'ranged_aoe') {
         pendingAoEExplosions.forEach(exp => {
           // A. Haritada patlama dalgası (aoe-explosion-burst)
           if (typeof window.__webdnd_showAoeVisualEffects === 'function') {
@@ -2126,11 +2155,121 @@
         playExplosionSound();
 
         pendingAoEExplosions = [];
+      } else if (activeEquippedPreset?.deliveryType === 'ranged_aoe') {
+        pendingAoEExplosions = [];
+      }
+
+      // 2. Saldıran Token ve Başlangıç Konumunu Belirle
+      const attackerTokenEl = selectedAttacker ? findTokenElement(selectedAttacker.type, selectedAttacker.id) : null;
+      const attackerPos = attackerTokenEl ? {
+        x: (parseFloat(attackerTokenEl.style.left) || attackerTokenEl.offsetLeft || 0) + (attackerTokenEl.offsetWidth || 50) / 2,
+        y: (parseFloat(attackerTokenEl.style.top) || attackerTokenEl.offsetTop || 0) + (attackerTokenEl.offsetHeight || 50) / 2
+      } : { x: 100, y: 100 };
+
+      // 3. Atılma Saldırısı (Dash Charge) Animasyonu
+      if (activeEquippedPreset && activeEquippedPreset.deliveryType === 'dash' && pendingDashDest) {
+        if (window.__webdnd_combat_effects) {
+          await window.__webdnd_combat_effects.playDash(
+            attackerTokenEl,
+            attackerPos,
+            { x: pendingDashDest.destX, y: pendingDashDest.destY },
+            activeEquippedPreset.dashWidth || 50
+          );
+          // Token koordinatlarını güncelle ve yayınla
+          if (selectedAttacker && attackerTokenEl) {
+            const tWidth = attackerTokenEl.offsetWidth || 50;
+            const tHeight = attackerTokenEl.offsetHeight || 50;
+            const newLeft = pendingDashDest.destX - tWidth / 2;
+            const newTop = pendingDashDest.destY - tHeight / 2;
+            attackerTokenEl.style.left = `${newLeft}px`;
+            attackerTokenEl.style.top = `${newTop}px`;
+            socket.emit('playerMovement', { id: selectedAttacker.id, x: newLeft, y: newTop });
+          }
+        }
+        pendingDashDest = null;
+        const btnTargetLoc = document.getElementById('atk-btn-target-location');
+        if (btnTargetLoc) btnTargetLoc.textContent = t('btn_select_dash_target', {}, '⚡ Haritada Atılma Hücresini Seç');
+      }
+
+      // 4. Alan Hasarlı Uzaktan Saldırı (Ranged AoE) Projectile & Detonasyon
+      else if (activeEquippedPreset && activeEquippedPreset.deliveryType === 'ranged_aoe') {
+        const destPoint = pendingTargetPoint || (() => {
+          if (lastAttackResults.length > 0) {
+            const firstTgtEl = findTokenElement(lastAttackResults[0].targetType, lastAttackResults[0].targetId);
+            if (firstTgtEl) {
+              return {
+                x: (parseFloat(firstTgtEl.style.left) || firstTgtEl.offsetLeft || 0) + (firstTgtEl.offsetWidth || 50) / 2,
+                y: (parseFloat(firstTgtEl.style.top) || firstTgtEl.offsetTop || 0) + (firstTgtEl.offsetHeight || 50) / 2,
+                radius: (activeEquippedPreset.aoeRadius || 2) * 50
+              };
+            }
+          }
+          return null;
+        })();
+
+        if (destPoint && window.__webdnd_combat_effects) {
+          await window.__webdnd_combat_effects.playProjectile(
+            attackerPos,
+            { x: destPoint.x, y: destPoint.y },
+            { style: activeEquippedPreset.attackType === 'spell' ? 'arcane' : 'fire' }
+          );
+          // Patlama görselini tetikle (sadece zemin patlama dalgası; hedef hasar metinleri triggerHitImpact tarafından tek seferde gösterilecek)
+          if (typeof window.__webdnd_showAoeVisualEffects === 'function') {
+            window.__webdnd_showAoeVisualEffects(
+              { x: destPoint.x, y: destPoint.y, radius: destPoint.radius || (activeEquippedPreset.aoeRadius || 2) * 50 },
+              0,
+              []
+            );
+          }
+          // Diğer oyunculara patlama görselini bildir
+          if (typeof socket !== 'undefined') {
+            socket.emit('triggerAoeExplosion', {
+              aoeInfo: { x: destPoint.x, y: destPoint.y, radius: destPoint.radius || (activeEquippedPreset.aoeRadius || 2) * 50 },
+              damage: 0,
+              affectedTargets: []
+            });
+          }
+          playExplosionSound();
+        }
+        pendingTargetPoint = null;
+        const btnTargetLoc = document.getElementById('atk-btn-target-location');
+        if (btnTargetLoc) btnTargetLoc.textContent = t('btn_select_aoe_target', {}, '🎯 Haritada Hedef Alanı Seç');
+      }
+
+      // 5. Uzaktan Projectile (Her hedefe animasyonlu mermi uçuşu)
+      else if (activeEquippedPreset && activeEquippedPreset.deliveryType === 'projectile') {
+        if (window.__webdnd_combat_effects && lastAttackResults.length > 0) {
+          const promises = lastAttackResults.map(r => {
+            const tgtEl = findTokenElement(r.targetType, r.targetId);
+            if (!tgtEl) return Promise.resolve();
+            const tLeft = parseFloat(tgtEl.style.left) || tgtEl.offsetLeft || 0;
+            const tTop = parseFloat(tgtEl.style.top) || tgtEl.offsetTop || 0;
+            const tSize = tgtEl.offsetWidth || 50;
+            const targetPos = { x: tLeft + tSize / 2, y: tTop + tSize / 2 };
+            return window.__webdnd_combat_effects.playProjectile(
+              attackerPos,
+              targetPos,
+              { style: r.attackType === 'spell' ? 'arcane' : 'arrow' }
+            );
+          });
+          await Promise.all(promises);
+        }
       }
 
       const senderSocketId = (typeof socket !== 'undefined' && socket.id) ? socket.id : null;
 
-      for (const attackResult of lastAttackResults) {
+      // Hedefleri tekilleştir (Aynı hedefin birden fazla kez hasar almasını mutlak olarak engelle)
+      const uniqueResults = [];
+      const seenTargets = new Set();
+      for (const r of lastAttackResults) {
+        const key = `${r.targetType}:${r.targetId}`;
+        if (!seenTargets.has(key)) {
+          seenTargets.add(key);
+          uniqueResults.push(r);
+        }
+      }
+
+      for (const attackResult of uniqueResults) {
         try {
           const impactId = `imp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -2179,6 +2318,28 @@
               'apply'
             );
             playHealChimeSound();
+          }
+
+          // 6. Saldırı Etkileri: İttir (Push) ve Çek (Pull)
+          if (attackResult.totalDamage > 0 && activeEquippedPreset && window.__webdnd_combat_effects) {
+            const tgtEl = findTokenElement(attackResult.targetType, attackResult.targetId);
+            if (tgtEl && (activeEquippedPreset.pushCells > 0 || activeEquippedPreset.pullCells > 0)) {
+              window.__webdnd_combat_effects.applyPushOrPull(
+                attackerPos,
+                tgtEl,
+                attackResult.targetId,
+                {
+                  pushCells: activeEquippedPreset.pushCells,
+                  pullCells: activeEquippedPreset.pullCells
+                }
+              );
+
+              if (activeEquippedPreset.pushCells > 0) {
+                addCombatLog(`<span class="atk-log-aoe" style="color:#60a5fa;">💨 ${escapeHtml(attackResult.targetName)} ${activeEquippedPreset.pushCells} hücre geriye savruldu!</span>`, 'apply');
+              } else if (activeEquippedPreset.pullCells > 0) {
+                addCombatLog(`<span class="atk-log-aoe" style="color:#c084fc;">🧲 ${escapeHtml(attackResult.targetName)} ${activeEquippedPreset.pullCells} hücre saldırgana doğru çekildi!</span>`, 'apply');
+              }
+            }
           }
         } catch (err) {
           addCombatLog(
@@ -2437,10 +2598,20 @@
     if (aoeCheck) aoeCheck.checked = false;
 
     const aoeRadiusInput = document.getElementById('atk-builder-aoe-radius');
-    if (aoeRadiusInput) aoeRadiusInput.value = '1';
+    if (aoeRadiusInput) aoeRadiusInput.value = '2';
 
-    const aoeRadiusGroup = document.getElementById('atk-builder-aoe-radius-group');
-    if (aoeRadiusGroup) aoeRadiusGroup.style.display = 'none';
+    // Yeni: Delivery Type ve Parametreleri Sıfırla
+    const deliverySelect = document.getElementById('atk-builder-delivery-type');
+    if (deliverySelect) {
+      deliverySelect.value = 'normal';
+      updateDeliveryParamsUI('normal');
+    }
+    const pushInput = document.getElementById('atk-builder-push-cells');
+    if (pushInput) pushInput.value = '0';
+    const pullInput = document.getElementById('atk-builder-pull-cells');
+    if (pullInput) pullInput.value = '0';
+    const dashWidthInput = document.getElementById('atk-builder-dash-width');
+    if (dashWidthInput) dashWidthInput.value = '50';
 
     const descInput = document.getElementById('atk-builder-desc');
     if (descInput) descInput.value = '';
@@ -2666,13 +2837,23 @@
     document.getElementById('atk-builder-half-miss').checked = Boolean(preset.halfDamageOnMiss);
 
     const aoeCheck = document.getElementById('atk-builder-is-aoe');
-    if (aoeCheck) aoeCheck.checked = Boolean(preset.isAoe);
+    if (aoeCheck) aoeCheck.checked = Boolean(preset.isAoe || preset.deliveryType === 'ranged_aoe');
 
     const aoeRadiusInput = document.getElementById('atk-builder-aoe-radius');
-    if (aoeRadiusInput) aoeRadiusInput.value = preset.aoeRadius || 1;
+    if (aoeRadiusInput) aoeRadiusInput.value = preset.aoeRadius || 2;
 
-    const aoeRadiusGroup = document.getElementById('atk-builder-aoe-radius-group');
-    if (aoeRadiusGroup) aoeRadiusGroup.style.display = preset.isAoe ? 'flex' : 'none';
+    // Delivery Type & Parametreleri Doldur
+    const deliverySelect = document.getElementById('atk-builder-delivery-type');
+    if (deliverySelect) {
+      deliverySelect.value = preset.deliveryType || (preset.isAoe ? 'ranged_aoe' : 'normal');
+      updateDeliveryParamsUI(deliverySelect.value);
+    }
+    const dashWidthInput = document.getElementById('atk-builder-dash-width');
+    if (dashWidthInput) dashWidthInput.value = preset.dashWidth || 50;
+    const pushInput = document.getElementById('atk-builder-push-cells');
+    if (pushInput) pushInput.value = preset.pushCells || 0;
+    const pullInput = document.getElementById('atk-builder-pull-cells');
+    if (pullInput) pullInput.value = preset.pullCells || 0;
 
     document.getElementById('atk-builder-desc').value = preset.description || '';
 
@@ -2807,6 +2988,11 @@
     const healTarget = document.getElementById('atk-builder-heal-target')?.value || 'self';
     const lifestealPercent = parseInt(document.getElementById('atk-builder-lifesteal-percent')?.value) || 0;
 
+    const deliveryType = document.getElementById('atk-builder-delivery-type')?.value || (isAoe ? 'ranged_aoe' : 'normal');
+    const dashWidth = Math.max(20, parseFloat(document.getElementById('atk-builder-dash-width')?.value) || 50);
+    const pushCells = Math.max(0, parseInt(document.getElementById('atk-builder-push-cells')?.value) || 0);
+    const pullCells = Math.max(0, parseInt(document.getElementById('atk-builder-pull-cells')?.value) || 0);
+
     return {
       id: id || ('atk_custom_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)),
       name,
@@ -2825,8 +3011,12 @@
       dicePools: basePools,
       statusEffectsToApply,
       halfDamageOnMiss,
-      isAoe,
+      isAoe: isAoe || deliveryType === 'ranged_aoe',
       aoeRadius,
+      deliveryType,
+      dashWidth,
+      pushCells,
+      pullCells,
       extraDamage: 0,
       description
     };
@@ -2888,13 +3078,74 @@
   document.getElementById('btn-catalog-new-preset')?.addEventListener('click', openNewPresetBuilder);
   document.getElementById('btn-builder-reset')?.addEventListener('click', resetPresetBuilder);
 
-  // AoE Checkbox değişiminde yarıçap grubunu göster/gizle
-  document.getElementById('atk-builder-is-aoe')?.addEventListener('change', (e) => {
-    const radiusGroup = document.getElementById('atk-builder-aoe-radius-group');
-    if (radiusGroup) {
-      radiusGroup.style.display = e.target.checked ? 'flex' : 'none';
-    }
+  // Delivery Type Parametre Görünürlüğü Fonksiyonu
+  function updateDeliveryParamsUI(type) {
+    const aoeRow = document.getElementById('atk-builder-aoe-param-row');
+    const dashRow = document.getElementById('atk-builder-dash-param-row');
+    if (aoeRow) aoeRow.style.display = (type === 'ranged_aoe') ? 'block' : 'none';
+    if (dashRow) dashRow.style.display = (type === 'dash') ? 'block' : 'none';
+  }
+
+  // Delivery Type Select Değişimi
+  document.getElementById('atk-builder-delivery-type')?.addEventListener('change', (e) => {
+    updateDeliveryParamsUI(e.target.value);
   });
+
+  // Haritada Hedef Alanı / Atılma Konumu Seç Butonu Dinleyicisi
+  const btnTargetLoc = document.getElementById('atk-btn-target-location');
+  if (btnTargetLoc) {
+    btnTargetLoc.addEventListener('click', () => {
+      if (!activeEquippedPreset) return;
+
+      if (activeEquippedPreset.deliveryType === 'ranged_aoe') {
+        if (!window.__webdnd_combat_effects) return;
+        window.__webdnd_combat_effects.startRangedAoeTargeting({
+          aoeRadius: activeEquippedPreset.aoeRadius || 2,
+          onSelected: (result) => {
+            pendingTargetPoint = result;
+            selectedTargets = [];
+            result.targets.forEach(tgt => {
+              addTargetToList({ type: tgt.type, id: tgt.id, name: tgt.name, data: tgt }, tgt.tokenEl);
+            });
+            renderSelectedTargets();
+            btnTargetLoc.textContent = `✅ Alan Seçildi (${result.targets.length} Hedef)`;
+            addCombatLog(`<span class="atk-log-aoe" style="color:#f59e0b;">🎯 Hedef alan kilitlendi: (${Math.round(result.x)}, ${Math.round(result.y)}) • ${result.targets.length} token tespit edildi.</span>`, 'aoe');
+          },
+          onCancel: () => {
+            btnTargetLoc.textContent = t('btn_select_aoe_target', {}, '🎯 Haritada Hedef Alanı Seç');
+          }
+        });
+      } else if (activeEquippedPreset.deliveryType === 'dash') {
+        if (!window.__webdnd_combat_effects || !selectedAttacker) {
+          alert('Önce saldıran bir karakter/yaratık seçmelisiniz!');
+          return;
+        }
+        const attackerTokenEl = findTokenElement(selectedAttacker.type, selectedAttacker.id);
+        const attackerPos = attackerTokenEl ? {
+          x: (parseFloat(attackerTokenEl.style.left) || attackerTokenEl.offsetLeft || 0) + (attackerTokenEl.offsetWidth || 50) / 2,
+          y: (parseFloat(attackerTokenEl.style.top) || attackerTokenEl.offsetTop || 0) + (attackerTokenEl.offsetHeight || 50) / 2
+        } : { x: 100, y: 100 };
+
+        window.__webdnd_combat_effects.startDashTargeting({
+          attackerPos,
+          dashWidth: activeEquippedPreset.dashWidth || 50,
+          onConfirmed: (result) => {
+            pendingDashDest = result;
+            selectedTargets = [];
+            result.targets.forEach(tgt => {
+              addTargetToList({ type: tgt.type, id: tgt.id, name: tgt.name, data: tgt }, tgt.tokenEl);
+            });
+            renderSelectedTargets();
+            btnTargetLoc.textContent = `✅ Atılma Hedefi Kilitlendi (${result.targets.length} Hedef)`;
+            addCombatLog(`<span class="atk-log-aoe" style="color:#38bdf8;">⚡ Atılma hedefi kilitlendi: (${Math.round(result.destX)}, ${Math.round(result.destY)}) • ${result.targets.length} hedef hatta yakalandı.</span>`, 'aoe');
+          },
+          onCancel: () => {
+            btnTargetLoc.textContent = t('btn_select_dash_target', {}, '⚡ Haritada Atılma Hücresini Seç');
+          }
+        });
+      }
+    });
+  }
 
   // Büyü Slotu Harcar Checkbox değişiminde slot bölümünü göster/gizle
   document.getElementById('atk-builder-consumes-slot')?.addEventListener('change', (e) => {

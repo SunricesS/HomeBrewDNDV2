@@ -1946,6 +1946,198 @@ async function handleRoundStartAuras() {
 }
 
 /**
+ * Şekilsiz Tehlikeli Arazi / Alan (Terrain Hazard) Objesi:
+ * Çizilen çokgen (polygon) alan içindeki tüm hedeflere her tur hasar ve durum etkisi uygular,
+ * kalan ömrünü (duration) her tur azaltır ve ömrü bitince kendini otomatik olarak yok eder.
+ */
+async function handleTerrainHazardPulse(markerId) {
+  const marker = markers[markerId];
+  if (!marker || marker.objectType !== 'terrain') return;
+
+  const cfg = marker.objectConfig || {};
+  let points = Array.isArray(cfg.points) ? cfg.points : [];
+
+  // Eğer çizili nokta yoksa varsayılan organik 8 köşeli alan oluştur
+  if (points.length < 3) {
+    const rad = clampNumber(cfg.radius || 120, 20, 2000);
+    const cx = (marker.x || 200) + (marker.size || 50) / 2;
+    const cy = (marker.y || 200) + (marker.size || 50) / 2;
+    points = [];
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2;
+      const r = rad * (0.8 + Math.sin(i * 3) * 0.2);
+      points.push({ x: Math.round(cx + Math.cos(ang) * r), y: Math.round(cy + Math.sin(ang) * r) });
+    }
+    cfg.points = points;
+  }
+
+  const damage = clampNumber(cfg.damage || 0, 0, 99999);
+  const damageType = cfg.damageType || 'fire';
+  const statusEffects = Array.isArray(cfg.statusEffects) ? cfg.statusEffects : [];
+  const targetFilter = cfg.targetFilter || 'all'; // 'all', 'players', 'markers'
+
+  // Ray-casting algoritması: Noktanın poligon içinde olup olmadığını test eder
+  function isPointInsidePolygon(px, py, vs) {
+    let inside = false;
+    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+      const xi = vs[i].x, yi = vs[i].y;
+      const xj = vs[j].x, yj = vs[j].y;
+      const intersect = ((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  const affectedTargets = [];
+
+  // 1. Oyuncular
+  if (targetFilter === 'all' || targetFilter === 'players') {
+    for (const [socketId, p] of Object.entries(players)) {
+      if (p.role === 'dm' || !p.character) continue;
+      const pSize = 50;
+      const pcx = (p.x || 0) + pSize / 2;
+      const pcy = (p.y || 0) + pSize / 2;
+
+      if (isPointInsidePolygon(pcx, pcy, points)) {
+        // Shelter (Barınak) kontrolü
+        const targetEffects = getTokenActiveEffects('character', p.character.id);
+        const hasShelter = targetEffects.some(e => e.effects?.shelter);
+        if (hasShelter) continue;
+
+        let newHp = p.character.hp_current || 0;
+        if (damage > 0) {
+          newHp = Math.max(0, newHp - damage);
+          p.character.hp_current = newHp;
+          try {
+            await supabase.from('characters').update({ hp_current: newHp }).eq('id', p.character.id);
+          } catch (e) {
+            console.error('Terrain oyuncu HP güncelleme hatası:', e);
+          }
+          io.emit('characterUpdated', {
+            id: socketId,
+            updates: { hp_current: newHp, hp_max: p.character.hp_max }
+          });
+          syncCombatantHp(socketId, newHp, p.character.hp_max);
+        }
+
+        // Durum efektlerini uygula
+        for (const eff of statusEffects) {
+          applyStatusEffectToTarget('character', p.character.id, eff);
+        }
+
+        affectedTargets.push({
+          type: 'character',
+          id: p.character.id,
+          name: p.character.name || 'Oyuncu',
+          damage,
+          newHp
+        });
+      }
+    }
+  }
+
+  // 2. Yaratıklar & Marker'lar
+  if (targetFilter === 'all' || targetFilter === 'markers') {
+    for (const [mid, m] of Object.entries(markers)) {
+      if (mid === markerId || m.hp == null) continue;
+      if (m.objectType === 'terrain') continue; // Diğer arazi alanları hasar almasın
+      const mSize = m.size || 50;
+      const mcx = (m.x || 0) + mSize / 2;
+      const mcy = (m.y || 0) + mSize / 2;
+
+      if (isPointInsidePolygon(mcx, mcy, points)) {
+        const targetEffects = getTokenActiveEffects('marker', mid);
+        const hasShelter = targetEffects.some(e => e.effects?.shelter);
+        if (hasShelter) continue;
+
+        if (damage > 0) {
+          m.hp = Math.max(0, m.hp - damage);
+          io.emit('updateMarkerData', m);
+          syncCombatantHp(mid, m.hp, m.maxHp);
+        }
+
+        for (const eff of statusEffects) {
+          applyStatusEffectToTarget('marker', mid, eff);
+        }
+
+        affectedTargets.push({
+          type: 'marker',
+          id: mid,
+          name: m.name || 'Marker',
+          damage,
+          newHp: m.hp
+        });
+      }
+    }
+  }
+
+  // Görsel ve ses dalgasını istemcilere yayınla
+  io.emit('objectTerrainPulseApplied', {
+    markerId,
+    name: marker.name,
+    points,
+    damage,
+    damageType,
+    statusEffects,
+    affectedTargets
+  });
+
+  const effNames = statusEffects.map(e => e.name).join(', ');
+  const effStr = effNames ? ` + [✨ ${effNames}]` : '';
+  const dmgStr = damage > 0 ? `${damage} ${damageType} hasarı` : 'Arazi etkisi';
+  const targetNames = affectedTargets.map(t => `${t.name}${damage > 0 ? ` (-${t.damage})` : ''}`).join(', ');
+
+  io.emit('logMessage', {
+    message: `🌋 [TEHLİKELİ ARAZİ] "${marker.name}" alanındaki hedeflere etki uyguladı! (${dmgStr}${effStr}). Etkilenenler: ${targetNames || 'Kimse etkilenmedi'}`,
+    color: '#e67e22'
+  });
+
+  // ÖMÜR (DURATION) AZALTMA VE KENDİNİ YOK ETME KONTROLÜ
+  if (cfg.remainingDuration != null) {
+    cfg.remainingDuration = Math.max(0, cfg.remainingDuration - 1);
+  } else {
+    cfg.remainingDuration = Math.max(0, (cfg.duration || 5) - 1);
+  }
+
+  if (cfg.remainingDuration <= 0) {
+    // Ömrü bitti -> Arazi kendisini yok eder!
+    io.emit('logMessage', {
+      message: `⏳ [ARAZİ TÜKENDİ] "${marker.name}" tehlikeli arazisinin ömrü doldu ve haritadan yok oldu!`,
+      color: '#94a3b8'
+    });
+    delete markers[markerId];
+    io.emit('removeMarker', markerId);
+    if (combatState.active) {
+      combatState.combatants = combatState.combatants.filter(c => c.id !== markerId);
+      if (combatState.currentTurnIndex >= combatState.combatants.length) {
+        combatState.currentTurnIndex = Math.max(0, combatState.combatants.length - 1);
+      }
+      io.emit('combatStateUpdated', combatState);
+    }
+    backupMapState();
+  } else {
+    marker.objectConfig = cfg;
+    io.emit('updateMarkerData', marker);
+    if (combatState.active) {
+      const c = combatState.combatants.find(item => item.id === markerId);
+      if (c) c.objectConfig = cfg;
+      io.emit('combatStateUpdated', combatState);
+    }
+  }
+}
+
+/**
+ * Tur/Round başında 'round' zamanlamalı arazi nesnelerini tetikler.
+ */
+async function handleRoundStartTerrains() {
+  for (const [mid, m] of Object.entries(markers)) {
+    if (m.objectType === 'terrain' && m.objectConfig?.triggerTiming === 'round') {
+      await handleTerrainHazardPulse(mid);
+    }
+  }
+}
+
+/**
  * Çağırıcı / Yuva / Portal nesnesinin kırılıp yok olmasını işler (Kırılabilir Obje Mantığı).
  */
 async function handleSpawnerMarkerBreak(markerId, reason = null) {
@@ -2311,11 +2503,11 @@ io.on('connection', (socket) => {
       maxDarkness: markerData.maxDarkness != null ? clampNumber(markerData.maxDarkness, 1, 99999) : 100,
       isMarker: true,
       assignedAttacks: Array.isArray(markerData.assignedAttacks) ? markerData.assignedAttacks : [],
-      objectType: (markerData.objectType === 'explosive' || markerData.objectType === 'aura' || markerData.objectType === 'spawner') ? markerData.objectType : 'creature',
-      objectConfig: (markerData.objectType === 'explosive' || markerData.objectType === 'aura' || markerData.objectType === 'spawner') && markerData.objectConfig && typeof markerData.objectConfig === 'object' ? {
+      objectType: (markerData.objectType === 'explosive' || markerData.objectType === 'aura' || markerData.objectType === 'spawner' || markerData.objectType === 'terrain') ? markerData.objectType : 'creature',
+      objectConfig: (markerData.objectType === 'explosive' || markerData.objectType === 'aura' || markerData.objectType === 'spawner' || markerData.objectType === 'terrain') && markerData.objectConfig && typeof markerData.objectConfig === 'object' ? {
         radius: clampNumber(markerData.objectConfig.radius || (markerData.objectType === 'explosive' ? 120 : (markerData.objectType === 'spawner' ? 80 : 150)), 20, 2000),
         damage: clampNumber(markerData.objectConfig.damage || 0, 0, 99999),
-        damageType: truncateStr(markerData.objectConfig.damageType || (markerData.objectType === 'explosive' ? 'fire' : 'necrotic'), 20),
+        damageType: truncateStr(markerData.objectConfig.damageType || (markerData.objectType === 'explosive' ? 'fire' : (markerData.objectType === 'terrain' ? (markerData.objectConfig.damageType || 'fire') : 'necrotic')), 20),
         statusEffects: Array.isArray(markerData.objectConfig.statusEffects) ? markerData.objectConfig.statusEffects : [],
         targetFilter: markerData.objectConfig.targetFilter || 'all',
         destroyOnExplode: markerData.objectConfig.destroyOnExplode !== false,
@@ -2324,7 +2516,12 @@ io.on('connection', (socket) => {
         spawnPresetId: truncateStr(markerData.objectConfig.spawnPresetId || '', 100),
         spawnCount: clampNumber(parseInt(markerData.objectConfig.spawnCount) || 1, 1, 10),
         spawnRadius: clampNumber(parseInt(markerData.objectConfig.spawnRadius) || 80, 20, 1000),
-        totalSpawnedSoFar: clampNumber(parseInt(markerData.objectConfig.totalSpawnedSoFar) || 0, 0, 9999)
+        totalSpawnedSoFar: clampNumber(parseInt(markerData.objectConfig.totalSpawnedSoFar) || 0, 0, 9999),
+        // Terrain (Arazi) Özel Alanları:
+        points: Array.isArray(markerData.objectConfig.points) ? markerData.objectConfig.points : [],
+        duration: clampNumber(parseInt(markerData.objectConfig.duration) || 5, 1, 999),
+        remainingDuration: clampNumber(parseInt(markerData.objectConfig.remainingDuration ?? markerData.objectConfig.duration) || 5, 0, 999),
+        theme: truncateStr(markerData.objectConfig.theme || 'fire', 20)
       } : null,
       hasExploded: false,
       isBroken: false
@@ -2451,14 +2648,14 @@ io.on('connection', (socket) => {
       };
     }
     if (data.objectType !== undefined) {
-      m.objectType = (data.objectType === 'explosive' || data.objectType === 'aura' || data.objectType === 'spawner') ? data.objectType : 'creature';
+      m.objectType = (data.objectType === 'explosive' || data.objectType === 'aura' || data.objectType === 'spawner' || data.objectType === 'terrain') ? data.objectType : 'creature';
     }
     if (data.objectConfig !== undefined) {
       if (data.objectConfig && typeof data.objectConfig === 'object') {
         m.objectConfig = {
           radius: clampNumber(data.objectConfig.radius || (m.objectType === 'explosive' ? 120 : (m.objectType === 'spawner' ? 80 : 150)), 20, 2000),
           damage: clampNumber(data.objectConfig.damage || 0, 0, 99999),
-          damageType: truncateStr(data.objectConfig.damageType || (m.objectType === 'explosive' ? 'fire' : 'necrotic'), 20),
+          damageType: truncateStr(data.objectConfig.damageType || (m.objectType === 'explosive' ? 'fire' : (m.objectType === 'terrain' ? (data.objectConfig.damageType || 'fire') : 'necrotic')), 20),
           statusEffects: Array.isArray(data.objectConfig.statusEffects) ? data.objectConfig.statusEffects : [],
           targetFilter: data.objectConfig.targetFilter || 'all',
           destroyOnExplode: data.objectConfig.destroyOnExplode !== false,
@@ -2467,7 +2664,12 @@ io.on('connection', (socket) => {
           spawnPresetId: truncateStr(data.objectConfig.spawnPresetId || '', 100),
           spawnCount: clampNumber(parseInt(data.objectConfig.spawnCount) || 1, 1, 10),
           spawnRadius: clampNumber(parseInt(data.objectConfig.spawnRadius) || 80, 20, 1000),
-          totalSpawnedSoFar: clampNumber(parseInt(data.objectConfig.totalSpawnedSoFar) || (m.objectConfig?.totalSpawnedSoFar || 0), 0, 9999)
+          totalSpawnedSoFar: clampNumber(parseInt(data.objectConfig.totalSpawnedSoFar) || (m.objectConfig?.totalSpawnedSoFar || 0), 0, 9999),
+          // Terrain (Arazi) Özel Alanları:
+          points: Array.isArray(data.objectConfig.points) ? data.objectConfig.points : (m.objectConfig?.points || []),
+          duration: clampNumber(parseInt(data.objectConfig.duration) || (m.objectConfig?.duration || 5), 1, 999),
+          remainingDuration: clampNumber(parseInt(data.objectConfig.remainingDuration ?? data.objectConfig.duration) || (m.objectConfig?.remainingDuration || 5), 0, 999),
+          theme: truncateStr(data.objectConfig.theme || (m.objectConfig?.theme || 'fire'), 20)
         };
       } else {
         m.objectConfig = null;
@@ -3047,7 +3249,7 @@ io.on('connection', (socket) => {
     combatState.currentTurnIndex = nextIndex;
     io.emit('combatStateUpdated', combatState);
 
-    // 3. Sırası gelen combatant canlı bir Aura/Totem veya Çağırıcı objesi ise tetikle
+    // 3. Sırası gelen combatant canlı bir Aura/Totem, Çağırıcı veya Arazi objesi ise tetikle
     const nextCombatant = combatState.combatants[nextIndex];
     if (nextCombatant && nextCombatant.isMarker) {
       const m = markers[nextCombatant.id];
@@ -3057,12 +3259,16 @@ io.on('connection', (socket) => {
       if (m && m.objectType === 'spawner' && m.hp !== null && m.hp > 0 && !m.isBroken && (m.objectConfig?.triggerTiming !== 'round')) {
         await handleSpawnerTrigger(nextCombatant.id);
       }
+      if (m && m.objectType === 'terrain' && (m.objectConfig?.triggerTiming !== 'round')) {
+        await handleTerrainHazardPulse(nextCombatant.id);
+      }
     }
 
-    // 4. Yeni raund başladıysa 'round' tetiklemeli aura ve çağırıcı nesnelerini tetikle
+    // 4. Yeni raund başladıysa 'round' tetiklemeli aura, çağırıcı ve arazi nesnelerini tetikle
     if (roundAdvanced) {
       await handleRoundStartAuras();
       await handleRoundStartSpawners();
+      await handleRoundStartTerrains();
     }
   });
 
@@ -3090,7 +3296,7 @@ io.on('connection', (socket) => {
     combatState.currentTurnIndex = safeIdx;
     io.emit('combatStateUpdated', combatState);
 
-    // Sırası verilen combatant canlı bir Aura/Totem veya Çağırıcı objesi ise tetikle
+    // Sırası verilen combatant canlı bir Aura/Totem, Çağırıcı veya Arazi objesi ise tetikle
     const targetCombatant = combatState.combatants[safeIdx];
     if (targetCombatant && targetCombatant.isMarker) {
       const m = markers[targetCombatant.id];
@@ -3099,6 +3305,9 @@ io.on('connection', (socket) => {
       }
       if (m && m.objectType === 'spawner' && m.hp !== null && m.hp > 0 && !m.isBroken) {
         await handleSpawnerTrigger(targetCombatant.id);
+      }
+      if (m && m.objectType === 'terrain') {
+        await handleTerrainHazardPulse(targetCombatant.id);
       }
     }
   });
@@ -3124,6 +3333,14 @@ io.on('connection', (socket) => {
     const markerId = typeof data === 'string' ? data : (data?.markerId || data?.id);
     if (markerId && markers[markerId] && markers[markerId].objectType === 'aura') {
       await handleAuraMarkerPulse(markerId);
+    }
+  });
+
+  socket.on('triggerObjectTerrain', async (data) => {
+    if (!players[socket.id] || players[socket.id].role !== 'dm') return;
+    const markerId = typeof data === 'string' ? data : (data?.markerId || data?.id);
+    if (markerId && markers[markerId] && markers[markerId].objectType === 'terrain') {
+      await handleTerrainHazardPulse(markerId);
     }
   });
 
