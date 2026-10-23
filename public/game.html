@@ -340,6 +340,8 @@
                         title="Zoom Out (Wheel Backward / -)" data-i18n-title="zoom_out_title">−</button>
                     <button type="button" id="btn-zoom-fit" class="map-zoom-btn map-fit-btn"
                         title="Fit Map to Screen (F)" data-i18n-title="zoom_fit_title">⛶</button>
+                    <button type="button" id="btn-toggle-layout-editor" class="map-zoom-btn map-layout-btn"
+                        title="Layout Editor (F6)" data-i18n-title="layout_editor_btn_title">🎛️</button>
                 </div>
             </div>
         </div>
@@ -508,6 +510,10 @@
                                     <div class="shortcut-item" data-keywords="sag tik right click menu context token kaldir">
                                         <div class="shortcut-keys"><kbd class="kbd-badge">Sağ Tık</kbd></div>
                                         <div class="shortcut-desc">Token Evrensel Menü (Efekt, Boyut, Kaldır)</div>
+                                    </div>
+                                    <div class="shortcut-item" data-keywords="f6 layout düzen konum taşı yerleştir sürükle drag position">
+                                        <div class="shortcut-keys"><kbd class="kbd-badge">F6</kbd></div>
+                                        <div class="shortcut-desc" data-i18n="shortcut_layout_editor">Düzen Düzenleyici — HUD öğelerini sürükleyerek konumlandır</div>
                                     </div>
                                 </div>
 
@@ -2499,6 +2505,7 @@
     <script src="js/combat-tracker.js?v=4"></script>
     <script src="js/aoe-damage.js?v=1"></script>
     <script src="js/panel-manager.js?v=1"></script>
+    <script src="js/layout-editor.js?v=1"></script>
     <script>
         // Mobile sidebar toggle
         (function () {

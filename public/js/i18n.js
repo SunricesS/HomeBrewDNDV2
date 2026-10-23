@@ -557,7 +557,24 @@
       map_tokens_empty: 'No tokens on map currently.',
       map_token_quick_remove_title: 'Quick Remove from Map',
       map_token_click_edit_hint: 'Click to view details & edit',
-      token_editing_badge_text: 'EDITING'
+      token_editing_badge_text: 'EDITING',
+
+      // Layout Editor (F6)
+      layout_editor_title: 'Layout Editor',
+      layout_editor_btn_title: 'Layout Editor (F6) — Drag HUD elements to customize position',
+      layout_reset: 'Reset',
+      layout_close: 'Close',
+      layout_mode_on: '🔓 Layout Edit Mode Active — Drag elements to reposition',
+      layout_mode_off: '🔒 Layout Edit Mode Closed — Positions saved',
+      layout_reset_done: '↩️ All elements restored to default positions',
+      layout_el_draw_toolbar: '✏️ Drawing Tools',
+      layout_el_zoom_controls: '🔍 Zoom Controls',
+      layout_el_combat_btn: '⚔️ Combat Mode',
+      layout_el_aoe_btn: '💥 Area Damage (AoE)',
+      layout_el_combat_bar: '⚔️ Combat & Initiative Bar',
+      layout_el_action_hotbar: '🎯 Action & Attack Hotbar',
+      layout_alt_drag_saved: '📍 Position saved',
+      shortcut_layout_editor: 'Layout Editor — Drag HUD elements to customize position'
     },
 
     tr: {
@@ -1107,7 +1124,24 @@
       map_tokens_empty: 'Haritada henüz aktif token bulunmuyor.',
       map_token_quick_remove_title: 'Haritadan Hızlı Kaldır',
       map_token_click_edit_hint: 'Detayları gör ve düzenle',
-      token_editing_badge_text: 'DÜZENLENİYOR'
+      token_editing_badge_text: 'DÜZENLENİYOR',
+
+      // Düzen Düzenleyici (F6)
+      layout_editor_title: 'Düzen Düzenleyici',
+      layout_editor_btn_title: 'Düzen Düzenleyici (F6) — HUD öğelerini sürükleyerek konumlandır',
+      layout_reset: 'Sıfırla',
+      layout_close: 'Kapat',
+      layout_mode_on: '🔓 Düzen Düzenleme Modu Açık — Öğeleri sürükleyerek konumlandırın',
+      layout_mode_off: '🔒 Düzen Düzenleme Modu Kapatıldı — Konumlar kaydedildi',
+      layout_reset_done: '↩️ Tüm öğeler varsayılan konumlarına döndürüldü',
+      layout_el_draw_toolbar: '✏️ Çizim Araçları',
+      layout_el_zoom_controls: '🔍 Zoom Kontrolleri',
+      layout_el_combat_btn: '⚔️ Savaş Modu',
+      layout_el_aoe_btn: '💥 Alan Hasarı (AoE)',
+      layout_el_combat_bar: '⚔️ İnisiyatif & Tur Takibi',
+      layout_el_action_hotbar: '🎯 Aksiyon & Saldırı Çubuğu',
+      layout_alt_drag_saved: '📍 Konum kaydedildi',
+      shortcut_layout_editor: 'Düzen Düzenleyici — HUD öğelerini sürükleyerek konumlandır'
     }
   };
 
