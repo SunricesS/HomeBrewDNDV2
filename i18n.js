@@ -594,7 +594,26 @@
       grid_cell_distribution: 'Grid Distribution:',
       grid_total_cells: 'Total Squares:',
       grid_reset_btn: '↩️ Reset to Default Grid',
-      grid_saved_toast: 'Grid settings synchronized'
+      grid_saved_toast: 'Grid settings synchronized',
+
+      // Attack Delivery & Combat Grid Effects
+      delivery_type_label: '🎯 Attack Delivery Type:',
+      delivery_normal: '⚔️ Standard / Direct (Melee/Direct)',
+      delivery_projectile: '🏹 Ranged Projectile (Visual Missile Flight)',
+      delivery_ranged_aoe: '💥 Ranged AoE Blast (Point Select & Explosion)',
+      delivery_dash: '⚡ Dash / Charge Attack (Line Damage to Cell)',
+      dash_width_label: 'Dash Corridor Width (px):',
+      push_cells_label: '💨 Push Target (Knockback):',
+      push_cells_hint: 'cells pushed back (0 = off)',
+      pull_cells_label: '🧲 Pull Target (Drag Closer):',
+      pull_cells_hint: 'cells pulled closer (0 = off)',
+      btn_select_aoe_target: '🎯 Select Target Area on Map',
+      btn_select_dash_target: '⚡ Select Dash Destination on Map',
+      targeting_active_hint: 'Click map to confirm target (ESC to cancel)',
+      target_area_locked: 'Target area locked at cell',
+      dash_dest_locked: 'Dash destination locked at cell',
+      combat_pushed_log: 'pushed back',
+      combat_pulled_log: 'pulled closer'
     },
 
     tr: {
@@ -1181,7 +1200,26 @@
       grid_cell_distribution: 'Hücre Dağılımı:',
       grid_total_cells: 'Toplam Kare:',
       grid_reset_btn: '↩️ Varsayılana Sıfırla',
-      grid_saved_toast: 'Izgara ayarları senkronize edildi'
+      grid_saved_toast: 'Izgara ayarları senkronize edildi',
+
+      // Saldırı Çeşitleri & Grid Savaş Etkileri
+      delivery_type_label: '🎯 Saldırı Çeşidi:',
+      delivery_normal: '⚔️ Standart / Doğrudan (Melee/Direct)',
+      delivery_projectile: '🏹 Uzaktan Projectile (Mermi Uçuş Efekti)',
+      delivery_ranged_aoe: '💥 Alan Hasarlı Uzaktan Saldırı (Ranged AoE)',
+      delivery_dash: '⚡ Atılma Saldırısı (Dash / Charge Line)',
+      dash_width_label: 'Atılma Çapı / Genişliği (px):',
+      push_cells_label: '💨 Saldırı İttirir (Geri Savurma):',
+      push_cells_hint: 'hücre geriye savurur (0 = kapalı)',
+      pull_cells_label: '🧲 Saldırı Çeker (Kendine Çekme):',
+      pull_cells_hint: 'hücre kendine çeker (0 = kapalı)',
+      btn_select_aoe_target: '🎯 Haritada Hedef Alanı Seç',
+      btn_select_dash_target: '⚡ Haritada Atılma Hücresini Seç',
+      targeting_active_hint: 'Haritaya tıklayarak hedefi onaylayın (İptal için ESC)',
+      target_area_locked: 'Hedef alanı kilitlendi',
+      dash_dest_locked: 'Atılma hedefi kilitlendi',
+      combat_pushed_log: 'geriye savruldu',
+      combat_pulled_log: 'kendine çekildi'
     }
   };
 

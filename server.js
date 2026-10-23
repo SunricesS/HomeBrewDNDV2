@@ -2668,6 +2668,12 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('aoeDamageApplied', data);
   });
 
+  // Saldırı efektleri (projectile, dash, vb.) yayını
+  socket.on('triggerCombatEffect', (data) => {
+    if (!data || typeof data !== 'object') return;
+    socket.broadcast.emit('combatEffectTriggered', data);
+  });
+
   // ---- DM: Arka Plan Güncelle ----
   socket.on('updateBg', (url) => {
     if (!players[socket.id] || players[socket.id].role !== 'dm') return;
@@ -3226,8 +3232,12 @@ io.on('connection', (socket) => {
       halfDamageOnMiss: Boolean(preset.halfDamageOnMiss),
       extraDamage: clampNumber(parseInt(preset.extraDamage) || 0, 0, 1000),
       attackCount: clampNumber(parseInt(preset.attackCount) || 1, 1, 20),
-      isAoe: Boolean(preset.isAoe),
+      isAoe: Boolean(preset.isAoe || preset.deliveryType === 'ranged_aoe'),
       aoeRadius: Math.max(0.5, parseFloat(preset.aoeRadius) || 1),
+      deliveryType: ['normal', 'projectile', 'ranged_aoe', 'dash'].includes(preset.deliveryType) ? preset.deliveryType : (preset.isAoe ? 'ranged_aoe' : 'normal'),
+      dashWidth: Math.max(20, Math.min(500, parseFloat(preset.dashWidth) || 50)),
+      pushCells: Math.max(0, Math.min(20, parseInt(preset.pushCells) || 0)),
+      pullCells: Math.max(0, Math.min(20, parseInt(preset.pullCells) || 0)),
       description: truncateStr(preset.description || '', 200)
     };
 
@@ -3266,6 +3276,12 @@ io.on('connection', (socket) => {
             healPool: newPreset.healPool,
             healTarget: newPreset.healTarget,
             lifestealPercent: newPreset.lifestealPercent
+          },
+          _delivery: {
+            deliveryType: newPreset.deliveryType,
+            dashWidth: newPreset.dashWidth,
+            pushCells: newPreset.pushCells,
+            pullCells: newPreset.pullCells
           }
         },
         status_effects_to_apply: newPreset.statusEffectsToApply,
@@ -3790,6 +3806,7 @@ async function restoreAttackPresets() {
       attackPresets = data.map(row => {
         const slotConfig = row.dice_pools?._spellSlotConfig || {};
         const healCfg = row.heal_config || row.dice_pools?._healConfig || {};
+        const deliveryCfg = row.delivery_config || row.dice_pools?._delivery || {};
         return {
           id: row.id,
           name: row.name,
@@ -3809,8 +3826,12 @@ async function restoreAttackPresets() {
           halfDamageOnMiss: Boolean(row.half_damage_on_miss ?? row.halfDamageOnMiss),
           extraDamage: row.extra_damage ?? row.extraDamage ?? 0,
           attackCount: row.attack_count ?? row.attackCount ?? 1,
-          isAoe: Boolean(row.is_aoe ?? row.isAoe ?? row.dice_pools?._aoe?.isAoe),
+          isAoe: Boolean(row.is_aoe ?? row.isAoe ?? row.dice_pools?._aoe?.isAoe ?? (deliveryCfg.deliveryType === 'ranged_aoe')),
           aoeRadius: parseFloat(row.aoe_radius ?? row.aoeRadius ?? row.dice_pools?._aoe?.radius) || 1,
+          deliveryType: row.delivery_type || deliveryCfg.deliveryType || (row.is_aoe ? 'ranged_aoe' : 'normal'),
+          dashWidth: parseFloat(row.dash_width ?? deliveryCfg.dashWidth) || 50,
+          pushCells: parseInt(row.push_cells ?? deliveryCfg.pushCells) || 0,
+          pullCells: parseInt(row.pull_cells ?? deliveryCfg.pullCells) || 0,
           description: row.description || ''
         };
       });
